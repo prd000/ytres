@@ -1,0 +1,48 @@
+"""
+Thin async wrappers around the Postgres queue RPCs.
+All claim/heartbeat/complete/fail logic lives in SQL (see 0006_rpc.sql);
+these wrappers keep the Python side thin and testable.
+"""
+from __future__ import annotations
+import asyncpg
+from typing import Any
+from worker.db import get_pool
+
+
+async def claim_job(worker_id: str) -> dict[str, Any] | None:
+    """Claim the oldest queued job. Returns None if the queue is empty."""
+    pool = await get_pool()
+    row = await pool.fetchrow("select * from claim_job($1)", worker_id)
+    return dict(row) if row else None
+
+
+async def heartbeat_job(job_id: str, payload: dict[str, Any] | None = None) -> str | None:
+    """
+    Bump heartbeat_at; optionally checkpoint payload.
+    Returns the current job status so the caller can detect a cancellation flip.
+    """
+    pool = await get_pool()
+    import json
+    payload_json = json.dumps(payload) if payload is not None else None
+    row = await pool.fetchrow("select status from heartbeat_job($1, $2::jsonb)", job_id, payload_json)
+    return str(row["status"]) if row else None
+
+
+async def complete_job(job_id: str) -> None:
+    pool = await get_pool()
+    await pool.execute("select complete_job($1::uuid)", job_id)
+
+
+async def fail_job(job_id: str, error: str) -> None:
+    pool = await get_pool()
+    await pool.execute("select fail_job($1::uuid, $2)", job_id, error)
+
+
+async def reclaim_stale_jobs(timeout_seconds: int) -> None:
+    pool = await get_pool()
+    await pool.execute("select reclaim_stale_jobs($1)", timeout_seconds)
+
+
+async def cancel_project_jobs(project_id: str) -> None:
+    pool = await get_pool()
+    await pool.execute("select cancel_project_jobs($1::uuid)", project_id)

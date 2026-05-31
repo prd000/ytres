@@ -1,0 +1,193 @@
+# File Map
+
+A map of the project codebase — one line per file with its purpose. Update when files are added, renamed, or deleted.
+
+---
+
+## `context/` — Project documentation
+
+| File | Purpose |
+|---|---|
+| `PRD.md` | Product requirements document — the full v2 spec including architecture decisions, tech stack, data model, and module development order |
+| `DESIGN.md` | Design system spec — colors, typography, components, spacing, and brand guidelines. Source of truth for all UI tokens. |
+| `decisions.md` | Architectural decisions log — any deviations from PRD or major direction choices |
+| `deferredwork.md` | Items to implement later — required API keys, mocked surfaces pending real data, known gaps |
+| `log.md` | Build log — running record of everything built/changed, newest first |
+| `map.md` | This file — project file map |
+
+## `agent/` — Active planning artifacts
+
+| File | Purpose |
+|---|---|
+| `phase-2-plan.md` | Phase 2 implementation plan — Projects Module: status state machine, project CRUD via Server Actions, RLS isolation, source-tier settings |
+
+## `agent-complete/` — Completed planning artifacts
+
+| File | Purpose |
+|---|---|
+| `phase-0-plan.md` | Phase 0 implementation plan — detailed spec for the navigable frontend shell (complete) |
+| `phase-1-plan.md` | Phase 1 implementation plan (Supabase-native, FastAPI-free) — schema/RLS, job queue + RPCs, worker scaffold, Supabase auth wiring (complete) |
+
+---
+
+## `supabase/` — Supabase project (migrations + config)
+
+| File | Purpose |
+|---|---|
+| `config.toml` | Supabase CLI project config — ports, auth settings, analytics. Run `supabase start` to launch local stack. |
+| `migrations/0001_extensions.sql` | Enable pgvector (1536-dim embeddings) + pgcrypto |
+| `migrations/0002_core_tables.sql` | Enums (project_status, source_tier, subtopic_status, chat_role) + tables: projects, subtopics, sources, source_subtopics, source_chunks, chat_messages, reports. Realtime publication declared. |
+| `migrations/0003_jobs_and_activity.sql` | job_status enum + jobs table (SKIP LOCKED queue, partial indexes) + worker_activity table. Realtime publication extended. |
+| `migrations/0004_sharing.sql` | project_role enum + project_members table (Phase 11 groundwork) |
+| `migrations/0005_rls_policies.sql` | RLS enabled on all tables; can_access_project() + can_write_project() SECURITY DEFINER helpers; all SELECT/INSERT/UPDATE/DELETE policies |
+| `migrations/0006_rpc.sql` | Queue RPCs: claim_job(), heartbeat_job(), reclaim_stale_jobs(), complete_job(), fail_job(), cancel_project_jobs() |
+
+---
+
+## `worker/` — Python async worker (job queue + agent orchestrator)
+
+### `worker/worker/` — Python package
+
+| File | Purpose |
+|---|---|
+| `__init__.py` | Package marker |
+| `config.py` | All tunable constants from env vars (SUPABASE_DB_URL, WORKER_CONCURRENCY, POLL_INTERVAL, HEARTBEAT_INTERVAL, WATCHDOG_INTERVAL, STALE_TIMEOUT_SECONDS, GRACE_SHUTDOWN_SECONDS) |
+| `log_config.py` | `setup_logging()` — stdout JSON-ish logging setup |
+| `db.py` | asyncpg connection pool — `get_pool()` / `close_pool()`. Direct connection bypasses RLS by design. |
+| `queue.py` | Thin async wrappers around Postgres queue RPCs (claim_job, heartbeat_job, complete_job, fail_job, reclaim_stale_jobs, cancel_project_jobs) |
+| `loop.py` | Core loop: semaphore-bounded claim/dispatch, per-job heartbeat coroutine (detects cancellation), watchdog coroutine (reclaim stale), graceful SIGTERM/SIGINT drain. `JobContext` class passed to handlers. |
+| `main.py` | Entry point (`python -m worker.main`): setup_logging, pool init, signal handlers, runs loop.run() |
+| `handlers/__init__.py` | `HANDLERS` registry mapping job type strings to handler coroutines |
+| `handlers/echo.py` | Phase 1 proof-of-concept handler: checkpoints through steps, echoes payload.message, completes |
+
+### `worker/tests/` — pytest integration tests
+
+| File | Purpose |
+|---|---|
+| `conftest.py` | asyncpg pool fixture + seed helpers (_seed_user, _seed_project, _seed_subtopic, _enqueue_job) |
+| `test_queue.py` | Integration tests: SKIP LOCKED correctness, claim/heartbeat/reclaim/cancel/idempotent-resume scenarios against real Postgres |
+| `test_contract.py` | Pydantic contract tests for EchoPayload and WorkerActivityRow schemas |
+
+| Root file | Purpose |
+|---|---|
+| `pyproject.toml` | Package config: asyncpg/pydantic/python-dotenv deps; pytest-asyncio test config |
+
+---
+
+## `shared/` — Shared contracts between worker and web
+
+| File | Purpose |
+|---|---|
+| `schemas/__init__.py` | Package marker |
+| `schemas/job_payloads.py` | Pydantic models: EchoPayload, WorkerActivityRow, JOB_PAYLOAD_MODELS registry |
+
+---
+
+## Root files
+
+| File | Purpose |
+|---|---|
+| `.env.example` | All environment variables documented with usage notes |
+| `render.yaml` | Render deployment: ytres-web (Next.js Web Service) + ytres-worker (Background Worker) |
+
+---
+
+## `web/` — Next.js frontend (Phase 0+)
+
+### Root config
+
+| File | Purpose |
+|---|---|
+| `package.json` | Dependencies and npm scripts (includes @supabase/ssr, @supabase/supabase-js, server-only added in Phase 1) |
+| `tsconfig.json` | TypeScript strict config with `@/` path alias |
+| `next.config.ts` | Next.js configuration |
+| `postcss.config.mjs` | PostCSS config (`@tailwindcss/postcss`) |
+| `proxy.ts` | Next.js 16 Proxy (replaces middleware.ts) — session refresh + auth redirects for (app) routes |
+| `public/brand/spike-mark.svg` | Anthropic radial spike-mark brand glyph (SVG asset) |
+
+### `src/app/` — App Router routes
+
+| File | Purpose |
+|---|---|
+| `layout.tsx` | Root layout — loads Cormorant Garamond/Inter/JetBrains Mono via `next/font`, sets `<html>` font CSS vars (+ `suppressHydrationWarning`), wraps children in `ThemeProvider`, imports `globals.css` |
+| `globals.css` | Tailwind `@import` + `@custom-variant dark` + `@theme` design token block (all DESIGN.md colors, radius, spacing, fonts) + `.dark{}` warm-dark role-token remap + typography composite utility classes |
+| `page.tsx` | Root route — redirects to `/dashboard` |
+| `(auth)/layout.tsx` | Auth route group layout (minimal, no chrome) |
+| `(auth)/login/page.tsx` | Login page — renders `AuthShell` + `LoginForm` |
+| `(auth)/signup/page.tsx` | Signup page — renders `AuthShell` + `SignupForm` |
+| `(auth)/actions.ts` | `"use server"` auth Server Actions: `login`, `signup`, `signOut` — call Supabase auth, return `{error}` or `redirect()` |
+| `(app)/layout.tsx` | App route group layout — async; calls `getCurrentUser()`, passes user + `signOut` to `TopNav`; renders TopNav + main + Footer |
+| `(app)/dashboard/page.tsx` | Dashboard — fetches projects via `client.ts`, renders `DashboardView` |
+| `(app)/project/[id]/layout.tsx` | **Project shell layout** — fetches project, renders `ProjectShellHeader` + `ProjectTabNav` + `{children}`. STAYS MOUNTED across tab switches. Phase 7 Realtime seam. |
+| `(app)/project/[id]/page.tsx` | Redirects `/project/[id]` → `/project/[id]/plan` |
+| `(app)/project/[id]/plan/page.tsx` | Plan tab — fetches project + subtopics |
+| `(app)/project/[id]/research/page.tsx` | Research tab — fetches project + subtopics + worker activity |
+| `(app)/project/[id]/sources/page.tsx` | Sources tab — fetches project + subtopics + sources |
+| `(app)/project/[id]/chat/page.tsx` | Chat tab — fetches project + chat messages |
+| `(app)/project/[id]/report/page.tsx` | Report tab — fetches project + sources + existing report |
+
+### `src/lib/` — Utilities and data layer
+
+| File | Purpose |
+|---|---|
+| `utils.ts` | `cn()` (clsx + tailwind-merge), `formatRelativeDate()` |
+| `design/tokens.ts` | TS-side design maps: `STATUS_META` (ProjectStatus → label/toneClass/dotClass), `scoreClass()`, `scoreBarClass()` |
+| `data/types.ts` | Domain types: `ProjectStatus`, `SourceTier`, `SubtopicStatus`, `Project`, `Subtopic`, `Source`, `WorkerActivity`, `ChatMessage`, `Report`. Verbatim-reusable by real Supabase client. |
+| `data/fixtures.ts` | Typed mock dataset — 5 projects (all statuses), subtopics, sources (incl. low-quality scores), worker activity, chat thread with citations, report markdown |
+| `data/client.ts` | **THE swappable seam** — async data-access fns. Replace fn bodies with real Supabase calls in Phases 2+. |
+| `data/dal.ts` | `getCurrentUser()` — server-only, React cache()-memoized, reads Supabase auth session |
+| `supabase/client.ts` | `createClient()` — `createBrowserClient` for Client Components |
+| `supabase/server.ts` | `createClient()` — `createServerClient` with async cookies() adapter (`server-only`) |
+| `supabase/admin.ts` | `createAdminClient()` — service-role client for privileged Server Actions (`server-only`) |
+| `supabase/proxy-session.ts` | `updateSession()` — session refresh helper for proxy.ts; returns `{response, user}` |
+
+### `src/components/ui/` — Design system primitives
+
+| File | Purpose |
+|---|---|
+| `Button.tsx` | Button variants (primary/secondary/secondaryOnDark/text/icon/destructive) via cva |
+| `TextLink.tsx` | Coral text link — internal (next/link) or external |
+| `Card.tsx` | `Card` + `Surface` — surface prop: canvas/canvas-bordered/card/dark/dark-elevated/coral |
+| `Input.tsx` | `Input` (text input) + `Textarea` — coral focus ring, hairline border |
+| `Badge.tsx` | `Badge` — variants: pill (cream-card), coral (uppercase), outline |
+| `StatusPill.tsx` | `StatusPill` — maps `ProjectStatus` to semantic color via `STATUS_META` |
+| `ScorePill.tsx` | `ScorePill` (score/5 with color) + `ScoreBar` (horizontal bar) |
+| `Callout.tsx` | `Callout` — variants: coral, info (teal), warning |
+| `SpikeMark.tsx` | Anthropic radial spike-mark as inline SVG React component |
+
+### `src/components/theme/` — Dark mode
+
+| File | Purpose |
+|---|---|
+| `ThemeProvider.tsx` | `"use client"` next-themes wrapper (class strategy, system default) — mounted in root layout |
+| `ThemeToggle.tsx` | `"use client"` circular sun/moon toggle button (DESIGN.md `button-icon-circular`); `mounted` guard, calls `useTheme()`. Mounted in TopNav desktop + mobile |
+
+### `src/components/layout/` — Layout components
+
+| File | Purpose |
+|---|---|
+| `PageContainer.tsx` | Max-1200px centered container with responsive horizontal padding |
+| `TopNav.tsx` | `"use client"` 64px cream sticky nav — accepts `user` + `signOut` props; signed-in cluster (email + sign-out form action) vs signed-out cluster (sign-in/get-started links); mobile hamburger → Radix Dialog sheet |
+| `Footer.tsx` | Dark navy footer — wordmark, nav links, copyright |
+| `AuthShell.tsx` | Centered cream card layout for login/signup screens |
+| `ProjectShellHeader.tsx` | Project title (serif), StatusPill, optional Cancel button |
+| `ProjectTabNav.tsx` | `"use client"` — tab links using `usePathname()` for active state; category-tab token styling |
+
+### `src/components/features/` — Feature composites
+
+| File | Purpose |
+|---|---|
+| `auth/LoginForm.tsx` | `"use client"` email/password form — `useActionState(login)` + `<form action={action}>`; shows server error, pending state |
+| `auth/SignupForm.tsx` | `"use client"` name/email/password form — `useActionState(signup)` + `<form action={action}>`; shows server error, pending state |
+| `dashboard/DashboardView.tsx` | Projects grid + New project button |
+| `dashboard/ProjectCard.tsx` | Project card — research question, StatusPill, relative date |
+| `dashboard/EmptyState.tsx` | Empty dashboard state with CTA |
+| `plan/PlanTab.tsx` | `"use client"` — source tier display, subtopic list with objectives+badges, Approve/Regenerate actions |
+| `research/ResearchTab.tsx` | Subtopic progress cards with animated running dots, latest activity, sources-stored count |
+| `sources/SourcesTab.tsx` | Sources grouped by subtopic |
+| `sources/SourceCard.tsx` | Source card — title (external TextLink), key takeaway, 4 ScorePills, tier Badge |
+| `chat/ChatTab.tsx` | `"use client"` — scrollable message thread + in-memory composer |
+| `chat/ChatMessage.tsx` | Chat bubble (user=coral, assistant=card) with citation chips |
+| `report/ReportTab.tsx` | `"use client"` — source selector + generate + .md download + preview |
+| `report/SourceSelector.tsx` | Checkbox list with 25-source cap enforcement |
+| `report/ReportPreview.tsx` | `"use client"` — react-markdown with design-token styled components |
