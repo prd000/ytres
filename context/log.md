@@ -4,6 +4,13 @@ A running record of everything built/changed. Newest first.
 
 ---
 
+## 2026-06-01 — Bug #1 fix: login/signup card collapsed to a thin column
+
+- **Symptom:** `/login` (and `/signup`) card, inputs, labels and button compressed into a very thin column; page was styled (cream card, coral button, serif headings) but unusable. `/project/new` rendered normally — confirming Tailwind itself was fine.
+- **Root cause:** `web/src/components/layout/AuthShell.tsx` was the only layout centering with `flex flex-col items-center` and relying solely on `w-full` for the inner wrapper's width. `items-center` sets the flex cross-axis to *center* (not *stretch*), so the wrapper's width depended entirely on `width:100%` resolving — the fragile pattern that collapses to content min-width. Every working page sizes via the block-level `PageContainer` (`mx-auto w-full`) instead.
+- **Fix:** dropped `items-center` from the outer container (child now defaults to `align-items: stretch`) and added `mx-auto` to the inner `w-full max-w-md` wrapper so it stretches to full width, caps at `max-w-md` (448px), and stays centered. One-file change; covers both login and signup since both use `AuthShell`. No changes needed to `LoginForm`/`SignupForm`/`Input` — their `w-full` elements now fill the correctly-sized card.
+- Aligned with `DESIGN.md` (cream `surface-card`, 32px internal padding, centered card).
+
 ## 2026-05-31 — Phase 4 + 5 (Storage, Embeddings, Planner) + Realtime + social_media tier
 
 ### Part A — Worker LLM layer (`worker/worker/llm/`)

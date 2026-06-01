@@ -10,8 +10,8 @@ interface AuthShellProps {
 
 export function AuthShell({ title, subtitle, children }: AuthShellProps) {
   return (
-    <div className="min-h-screen bg-canvas flex flex-col items-center justify-center px-4 py-16">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen bg-canvas flex flex-col justify-center px-4 py-16">
+      <div className="w-full max-w-md mx-auto">
         {/* Wordmark */}
         <Link href="/" className="flex items-center gap-2 text-ink hover:text-primary transition-colors justify-center mb-10">
           <SpikeMark size={16} className="text-primary" />
