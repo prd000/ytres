@@ -22,7 +22,14 @@ DB_URL: str = os.environ.get(
 
 @pytest.fixture(scope="session")
 async def pool() -> asyncpg.Pool:
-    p = await asyncpg.create_pool(DB_URL, min_size=1, max_size=5)
+    # Imported lazily: worker.db pulls in worker.config, which requires
+    # SUPABASE_DB_URL at import time. Deferring keeps collection working when
+    # the env var is unset; by the time the pool is built it must be set anyway.
+    from worker.db import register_json_codecs
+
+    p = await asyncpg.create_pool(
+        DB_URL, min_size=1, max_size=5, init=register_json_codecs
+    )
     yield p
     await p.close()
 
@@ -85,7 +92,6 @@ async def _enqueue_job(
     payload: dict | None = None,
     max_attempts: int = 3,
 ) -> str:
-    import json
     row = await conn.fetchrow(
         """
         insert into jobs (project_id, type, payload, max_attempts)
@@ -94,7 +100,7 @@ async def _enqueue_job(
         """,
         project_id,
         job_type,
-        json.dumps(payload or {"message": "hello"}),
+        payload or {"message": "hello"},  # jsonb codec encodes the dict
         max_attempts,
     )
     return str(row["id"])

@@ -14,7 +14,6 @@ Key invariants verified:
 """
 from __future__ import annotations
 import asyncio
-import json
 import uuid
 import pytest
 import asyncpg
@@ -42,6 +41,30 @@ async def test_claim_marks_running_and_increments_attempts(pool: asyncpg.Pool):
             assert row["heartbeat_at"] is not None
 
             raise Exception("rollback")  # keep test isolated
+
+
+@pytest.mark.asyncio
+async def test_claim_job_payload_is_dict(pool: asyncpg.Pool):
+    """Regression for bug #1: claim_job must return payload as a dict, not a JSON
+    string. asyncpg returns jsonb as a string by default, so handlers' dict(payload)
+    blew up with 'dictionary update sequence element #0 has length 1'. The jsonb
+    codec (worker.db.register_json_codecs) must decode it to a dict. This drives the
+    real claim_job RPC path that the handler unit tests bypass."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            uid = await _seed_user(conn)
+            pid = await _seed_project(conn, uid)
+            payload = {"project_id": pid, "feedback": None}
+            await _enqueue_job(conn, pid, job_type="generate_plan", payload=payload)
+
+            row = await conn.fetchrow("select * from claim_job('worker-payload')")
+            assert row is not None
+            assert isinstance(row["payload"], dict), (
+                f"payload must decode to dict, got {type(row['payload']).__name__}"
+            )
+            assert row["payload"] == payload
+
+            raise Exception("rollback")
 
 
 @pytest.mark.asyncio
@@ -95,12 +118,12 @@ async def test_heartbeat_advances_timestamp_and_checkpoints(pool: asyncpg.Pool):
             row = await conn.fetchrow(
                 "select * from heartbeat_job($1::uuid, $2::jsonb)",
                 jid,
-                json.dumps(checkpoint),
+                checkpoint,  # jsonb codec encodes the dict
             )
             assert row["status"] == "running"
 
             job = await conn.fetchrow("select * from jobs where id = $1::uuid", jid)
-            assert json.loads(job["payload"]) == checkpoint
+            assert job["payload"] == checkpoint  # jsonb codec decodes to dict
 
             raise Exception("rollback")
 
@@ -204,7 +227,7 @@ async def test_idempotent_resume_from_checkpoint(pool: asyncpg.Pool):
             await conn.execute(
                 "select heartbeat_job($1::uuid, $2::jsonb)",
                 jid,
-                json.dumps(checkpoint),
+                checkpoint,  # jsonb codec encodes the dict
             )
 
             # Step 2: simulate crash (stale heartbeat)
@@ -218,7 +241,7 @@ async def test_idempotent_resume_from_checkpoint(pool: asyncpg.Pool):
             row = await conn.fetchrow("select * from claim_job('worker-b')")
             assert row is not None
             assert str(row["id"]) == jid
-            payload = json.loads(row["payload"])
+            payload = row["payload"]  # jsonb codec decodes to dict
             assert payload["progress"] == "step_1", "checkpoint payload must survive reclaim"
 
             raise Exception("rollback")

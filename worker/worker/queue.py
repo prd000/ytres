@@ -22,9 +22,9 @@ async def heartbeat_job(job_id: str, payload: dict[str, Any] | None = None) -> s
     Returns the current job status so the caller can detect a cancellation flip.
     """
     pool = await get_pool()
-    import json
-    payload_json = json.dumps(payload) if payload is not None else None
-    row = await pool.fetchrow("select status from heartbeat_job($1, $2::jsonb)", job_id, payload_json)
+    # payload is passed as a dict (or None); the pool's jsonb codec encodes it.
+    # None binds as SQL NULL, preserving heartbeat_job's coalesce() semantics.
+    row = await pool.fetchrow("select status from heartbeat_job($1, $2)", job_id, payload)
     return str(row["status"]) if row else None
 
 

@@ -4,6 +4,22 @@ This file tracks architectural decisions and any deviations from the original PR
 
 ---
 
+## 2026-06-01 — jsonb columns auto-(de)serialize via an asyncpg type codec at the pool boundary
+
+**Decision:** Register a `json`/`jsonb` type codec (`set_type_codec` with `encoder=json.dumps`, `decoder=json.loads`, `schema="pg_catalog"`) on **every** asyncpg connection via the pool `init` callback — `worker.db.register_json_codecs`, also used by the test pool. Consequently: jsonb columns are read as Python `dict`/`list` and written by passing Python objects directly. **Handlers and queue wrappers must never `json.dumps`/`json.loads` a jsonb value or param themselves** — the codec owns that boundary.
+
+**Why:** asyncpg returns json/jsonb as raw strings by default. Handlers (`planner`, `echo`) called `dict(ctx.job["payload"])` assuming a dict; via the `claim_job` RPC the payload was a string, so `dict()` iterated it char-by-char and raised `ValueError: dictionary update sequence element #0 has length 1`. Fixing at the DB boundary repairs the entire class of bug once, leaves handler code untouched, and makes every future handler immune — rather than scattering parse calls at each read site.
+
+**Scope / clarification vs. the 2026-05-31 "Decision 3 — pgvector … no codec registration":** that decision stands and is unrelated — `vector` columns still use the `$N::vector` string-cast path (no codec). This codec covers only `json`/`jsonb`. The one write that had to change was `heartbeat_job`, which previously pre-serialized with `json.dumps` + `$N::jsonb`; with the encoder registered that would double-encode, so it now passes the dict directly.
+
+## 2026-06-01 — RLS SELECT policies must check a row's own ownership directly, not via a table-requerying helper
+
+**Decision:** For a table whose rows are written with `INSERT … RETURNING` (i.e. a Supabase `.insert().select()`), its `SELECT` RLS policy must verify the row's own ownership with a **direct column predicate** (`owner_id = auth.uid()`), not solely through a `SECURITY DEFINER` function that re-queries the same table. `projects_select` is now `using (owner_id = auth.uid() or can_access_project(id))`.
+
+**Why:** `RETURNING` re-checks the SELECT policy against the just-inserted row. A helper like `can_access_project(id)` that does `select 1 from projects where id = … and owner_id = auth.uid()` runs against a snapshot that doesn't yet include the in-flight row, returns false, and the insert is rejected with the misleading `42501 new row violates row-level security policy`. This was the true cause of bug #1 (project creation failing) — not the JWT/new-API-keys/ES256 signing setup, which was verified working. A plain `INSERT` (no `RETURNING`) succeeded; only `INSERT … RETURNING` failed. The `SECURITY DEFINER` helper is still required for the cross-table member check (`project_members`) to avoid `projects`↔`project_members` policy recursion, so it's kept as the second `or` branch.
+
+**Convention going forward:** any future owner-scoped table follows the same shape — `for select using (owner_id = auth.uid() or <security-definer member check>)`. Don't gate a row's own-table visibility exclusively behind a function that reads that same table.
+
 ## 2026-06-01 — Semantic layout-width tokens to resolve the Tailwind v4 spacing/container collision
 
 **Decision:** Keep DESIGN.md's named spacing scale (`--spacing-xxs … --spacing-section`) exactly as-is, and introduce a separate set of **semantic layout-width tokens** in `globals.css @theme` for `max-w-*`: `--container-card` (28rem), `--container-panel` (24rem), `--container-content` (75rem / ~1200px). Components use `max-w-card` / `max-w-panel` / `max-w-content`; the bare Tailwind t-shirt width utilities (`max-w-md`, `max-w-sm`, …) are **not** used for layout.

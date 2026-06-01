@@ -44,6 +44,7 @@ _(no active plans — all phases through 5 complete)_
 | `migrations/0007_vector_indexes.sql` | ivfflat cosine + GIN FTS + btree project_id indexes on source_chunks |
 | `migrations/0008_match_chunks.sql` | `match_chunks()` SQL function — hybrid vector+keyword search via Reciprocal Rank Fusion |
 | `migrations/0009_social_media_tier.sql` | `ALTER TYPE source_tier ADD VALUE 'social_media'` |
+| `migrations/0010_fix_projects_select_returning.sql` | Bug #1 fix — `projects_select` checks `owner_id = auth.uid()` directly (plus `can_access_project(id)` for members) so `INSERT … RETURNING` (create-project) passes the SELECT policy |
 
 ---
 
@@ -56,7 +57,7 @@ _(no active plans — all phases through 5 complete)_
 | `__init__.py` | Package marker |
 | `config.py` | All tunable constants from env vars (SUPABASE_DB_URL, WORKER_CONCURRENCY, POLL_INTERVAL, HEARTBEAT_INTERVAL, WATCHDOG_INTERVAL, STALE_TIMEOUT_SECONDS, GRACE_SHUTDOWN_SECONDS) |
 | `log_config.py` | `setup_logging()` — stdout JSON-ish logging setup |
-| `db.py` | asyncpg connection pool — `get_pool()` / `close_pool()`. Direct connection bypasses RLS by design. |
+| `db.py` | asyncpg connection pool — `get_pool()` / `close_pool()`. Direct connection bypasses RLS by design. `register_json_codecs()` (pool `init` callback) makes json/jsonb columns decode to dict/list and encode back automatically. |
 | `queue.py` | Thin async wrappers around Postgres queue RPCs (claim_job, heartbeat_job, complete_job, fail_job, reclaim_stale_jobs, cancel_project_jobs) |
 | `loop.py` | Core loop: semaphore-bounded claim/dispatch, per-job heartbeat coroutine (detects cancellation), watchdog coroutine (reclaim stale), graceful SIGTERM/SIGINT drain. `JobContext` class passed to handlers. |
 | `main.py` | Entry point (`python -m worker.main`): setup_logging, pool init, signal handlers, runs loop.run() |

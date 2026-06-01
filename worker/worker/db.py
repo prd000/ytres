@@ -8,6 +8,7 @@ from an IPv4-only platform such as Render, and the log will say so explicitly.
 """
 from __future__ import annotations
 
+import json
 import logging
 import socket
 from urllib.parse import urlsplit
@@ -19,6 +20,27 @@ from worker.config import SUPABASE_DB_URL
 log = logging.getLogger(__name__)
 
 _pool: asyncpg.Pool | None = None
+
+
+async def register_json_codecs(conn: asyncpg.Connection) -> None:
+    """Make asyncpg round-trip json/jsonb columns as Python objects.
+
+    By default asyncpg returns json/jsonb as raw strings, so callers had to
+    json.loads() on read and json.dumps() on write. Registering this codec on
+    every pooled connection means jsonb columns decode to dict/list on read and
+    encode back on write automatically — handlers can treat ctx.job["payload"]
+    (and any jsonb column) as a plain dict. See context/decisions.md.
+
+    Used as the pool `init` callback here and in the test pool (conftest.py) so
+    tests exercise the same behaviour as production.
+    """
+    for type_name in ("json", "jsonb"):
+        await conn.set_type_codec(
+            type_name,
+            encoder=json.dumps,
+            decoder=json.loads,
+            schema="pg_catalog",
+        )
 
 # Supabase Supavisor transaction-mode pooler (port 6543) does not support the
 # named prepared statements asyncpg caches by default. Disabling the statement
@@ -81,8 +103,10 @@ async def get_pool() -> asyncpg.Pool:
             kwargs["statement_cache_size"] = 0
             log.info("port %s detected → disabling statement cache (transaction pooler)", port)
 
-        _pool = await asyncpg.create_pool(SUPABASE_DB_URL, **kwargs)
-        log.info("DB pool ready (%s:%s)", host, port)
+        _pool = await asyncpg.create_pool(
+            SUPABASE_DB_URL, init=register_json_codecs, **kwargs
+        )
+        log.info("DB pool ready (%s:%s) — json/jsonb codecs registered", host, port)
     return _pool
 
 

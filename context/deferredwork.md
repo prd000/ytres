@@ -14,6 +14,10 @@ Added 2026-06-01 alongside the `/auth/confirm` server-side email-confirmation ha
    ```
    (Default template uses `{{ .ConfirmationURL }}`, which routes through Supabase's implicit-flow verify endpoint and does **not** establish the cookie-based server session.)
 
+## Migration 0010 applied directly to prod (sync the CLI tracker when convenient)
+
+`supabase/migrations/0010_fix_projects_select_returning.sql` (bug #1 fix) was applied **directly to the live Supabase DB** over the `SUPABASE_DB_URL` connection, not via `supabase db push` (the CLI isn't linked locally). The statements are idempotent (`drop policy if exists …; create policy …`), so a later `supabase db push` is safe and just records it in the migration tracker; fresh environments pick it up automatically. No action required unless you rely on `supabase migration list` being in sync — if so, run `supabase db push` once.
+
 ## API Keys / Environment Variables needed (user must provide)
 
 These are required before the corresponding phase can run for real. None are wired yet (Phase 0 is mocked data only).
