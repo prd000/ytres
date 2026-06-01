@@ -56,6 +56,13 @@ Before Phase 1 can run end-to-end, the user must:
 4. **Create Render services**: one Web Service pointing at `web/` and one Background Worker pointing at `worker/`. Set env vars from `.env.example`.
 5. **Run `npm install`** if you see missing-module errors for `@supabase/ssr`, `@supabase/supabase-js`, or `server-only` (these were installed during Phase 1 development but are captured in `package.json`).
 
+## Tailwind token collision — `--spacing-*` vs container scale (added 2026-06-01)
+
+`web/src/app/globals.css` `@theme` defines named spacing tokens (`--spacing-xs/sm/md/lg/xl/…`) that mirror the DESIGN.md spacing table. In Tailwind v4 these **shadow the built-in container scale** for the matching t-shirt-size keys, so `max-w-sm` → 12px and `max-w-md` → 16px instead of 24rem/28rem. This was the real cause of bug #1 (login card collapsed to a thin column) and also broke the dashboard empty state, chat empty state, and the mobile nav drawer.
+
+- **Immediate fix applied:** the four affected components now use arbitrary widths (`max-w-[24rem]`/`max-w-[28rem]`) that bypass the collision. The bug is resolved.
+- **Recommended cleanup (deferred — needs a design-system decision):** the named `--spacing-*` tokens are **not used anywhere as spacing utilities** (the codebase uses Tailwind's numeric scale, e.g. `p-8`, `gap-5`), so they are redundant and only cause this footgun. Removing them from `@theme` (or renaming them out of the `sm/md/lg/xl` keyspace) would restore `max-w-{xs,sm,md,lg,xl}` to the correct container scale globally and prevent the next developer from silently hitting a 12–16px `max-w-md`. Verify with a `next build` + a grep of the generated CSS afterward. If pursued, record it in `decisions.md`.
+
 ## Phase 3 user actions required (added 2026-05-31)
 
 Search keys are now read by `worker/worker/config.py` but are all optional — the keyless Semantic Scholar + trafilatura path works without any of them. To use Brave or Tavily, set the correct key in `worker/.env` and in Render's env vars:

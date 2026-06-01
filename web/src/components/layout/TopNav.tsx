@@ -80,7 +80,7 @@ export function TopNav({ user, signOut }: TopNavProps) {
 
           <Dialog.Portal>
             <Dialog.Overlay className="fixed inset-0 z-50 bg-[#141413]/50" />
-            <Dialog.Content className="fixed inset-y-0 right-0 z-50 w-full max-w-sm flex flex-col bg-canvas p-6 shadow-lg">
+            <Dialog.Content className="fixed inset-y-0 right-0 z-50 w-full max-w-[24rem] flex flex-col bg-canvas p-6 shadow-lg">
               <div className="flex items-center justify-between mb-8">
                 <Link href="/dashboard" className="flex items-center gap-2 text-ink" onClick={() => setMobileOpen(false)}>
                   <SpikeMark size={14} className="text-primary" />

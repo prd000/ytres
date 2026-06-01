@@ -4,12 +4,21 @@ A running record of everything built/changed. Newest first.
 
 ---
 
-## 2026-06-01 — Bug #1 fix: login/signup card collapsed to a thin column
+## 2026-06-01 — Bug #1 fix (CORRECTED): Tailwind token collision shrank `max-w-{sm,md}` to spacing values
 
-- **Symptom:** `/login` (and `/signup`) card, inputs, labels and button compressed into a very thin column; page was styled (cream card, coral button, serif headings) but unusable. `/project/new` rendered normally — confirming Tailwind itself was fine.
-- **Root cause:** `web/src/components/layout/AuthShell.tsx` was the only layout centering with `flex flex-col items-center` and relying solely on `w-full` for the inner wrapper's width. `items-center` sets the flex cross-axis to *center* (not *stretch*), so the wrapper's width depended entirely on `width:100%` resolving — the fragile pattern that collapses to content min-width. Every working page sizes via the block-level `PageContainer` (`mx-auto w-full`) instead.
-- **Fix:** dropped `items-center` from the outer container (child now defaults to `align-items: stretch`) and added `mx-auto` to the inner `w-full max-w-md` wrapper so it stretches to full width, caps at `max-w-md` (448px), and stays centered. One-file change; covers both login and signup since both use `AuthShell`. No changes needed to `LoginForm`/`SignupForm`/`Input` — their `w-full` elements now fill the correctly-sized card.
-- Aligned with `DESIGN.md` (cream `surface-card`, 32px internal padding, centered card).
+- **Real root cause (found by inspecting the generated production CSS):** the custom design tokens in `globals.css` `@theme` — `--spacing-sm: .75rem`, `--spacing-md: 1rem`, etc. — **shadow Tailwind v4's container scale** for the matching t-shirt-size keys. So the build emits `.max-w-md{max-width:var(--spacing-md)}` (**16px**) and `.max-w-sm{max-width:var(--spacing-sm)}` (**12px**) instead of `--container-md` (28rem) / `--container-sm` (24rem). The login card was therefore capped at 16px → the "thin column". `/project/new` was unaffected because it uses `max-w-2xl` (no `--spacing-2xl` exists, so it correctly resolves to `--container-2xl`).
+- **Why the first attempt didn't work:** the earlier `items-center → stretch` + `mx-auto` change (commit 67e6345) treated a non-issue; the wrapper was capped at 16px regardless of how it was centered.
+- **Fix:** replaced the four colliding `max-w-{sm,md}` usages with explicit arbitrary widths that bypass the namespace collision (`max-w-[28rem]` for the auth card, `max-w-[24rem]` elsewhere):
+  - `web/src/components/layout/AuthShell.tsx` — `max-w-md` → `max-w-[28rem]` (login + signup card; the reported bug).
+  - `web/src/components/features/dashboard/EmptyState.tsx` — `max-w-sm` → `max-w-[24rem]` (the dashboard "narrow" symptom).
+  - `web/src/components/features/chat/ChatTab.tsx` — `max-w-sm` → `max-w-[24rem]` (empty-state hint).
+  - `web/src/components/layout/TopNav.tsx` — mobile menu drawer `max-w-sm` → `max-w-[24rem]` (was a 12px-wide drawer, broken on mobile).
+- **Verified** against a clean production build (`next build` + `next start`): generated CSS contains `max-width:28rem`/`24rem`, no dead `.max-w-md` rule, `/login` renders 200 with `w-full max-w-[28rem] mx-auto`.
+- **Follow-up (see deferredwork.md):** the named `--spacing-*` tokens are unused as spacing utilities and collide with the container scale — a latent footgun for any future `max-w-{xs,sm,md,lg,xl}`. Recommend removing/renaming them at the source.
+
+## 2026-06-01 — Bug #1 first attempt (superseded): AuthShell centering refactor
+
+- Changed `AuthShell` from `flex flex-col items-center` + `w-full` to `flex flex-col` + `w-full max-w-md mx-auto`, on the (incorrect) theory that `items-center` collapsed the card. Did not fix the bug — see the corrected entry above for the real cause. The `mx-auto` / stretch structure was kept (harmless, idiomatic).
 
 ## 2026-05-31 — Phase 4 + 5 (Storage, Embeddings, Planner) + Realtime + social_media tier
 
