@@ -1,13 +1,21 @@
 """
 LLM factory — builds a ChatOpenAI instance pointed at DeepSeek's
 OpenAI-compatible endpoint. Provider swap = config edit, no code change.
+
+Also provides invoke_structured(), a shared helper for structured-output LLM
+calls that degrades gracefully from function_calling to json_mode when the
+provider doesn't support tool use. Both planner and research handlers use this
+so the fallback logic lives in one place.
 """
 from __future__ import annotations
+import logging
 
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
 from worker.llm.config import LLMConfig
+
+log = logging.getLogger(__name__)
 
 
 def build_chat_model(
@@ -31,3 +39,21 @@ def build_chat_model(
         max_retries=cfg.max_retries,
         tags=[*(tags or []), f"role:{role}"],
     )
+
+
+async def invoke_structured(llm: BaseChatModel, schema, messages, run_name: str):
+    """Invoke LLM with structured output, degrading from function_calling to json_mode.
+
+    Shared by planner and research handlers so the fallback path is maintained
+    in one place. Both handlers pass tags/run_name at call time.
+    """
+    try:
+        chain = llm.with_structured_output(schema, method="function_calling")
+        return await chain.with_config({"run_name": run_name}).ainvoke(messages)
+    except Exception as e:
+        err_lower = str(e).lower()
+        if any(kw in err_lower for kw in ("tool", "function", "not support", "does not support")):
+            log.info("function_calling not supported by provider, retrying with json_mode")
+            chain = llm.with_structured_output(schema, method="json_mode")
+            return await chain.with_config({"run_name": run_name}).ainvoke(messages)
+        raise

@@ -25,10 +25,19 @@ class GeneratePlanPayload(BaseModel):
     progress: str | None = None
 
 
+class ResearchSubtopicPayload(BaseModel):
+    """Payload for the 'research_subtopic' job type (Phase 6 research pipeline)."""
+    project_id: str
+    subtopic_id: str
+    progress: str | None = None
+    checkpoint: dict | None = None  # resume state: processed_urls, stored_count, queries, etc.
+
+
 # Registry mapping job type names to their payload model.
 JOB_PAYLOAD_MODELS: dict[str, type[BaseModel]] = {
     "echo": EchoPayload,
     "generate_plan": GeneratePlanPayload,
+    "research_subtopic": ResearchSubtopicPayload,
 }
 
 

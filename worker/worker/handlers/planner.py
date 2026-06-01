@@ -17,7 +17,7 @@ import asyncpg
 
 from worker.db import get_pool
 from worker.llm.config import LLMConfig
-from worker.llm.factory import build_chat_model
+from worker.llm.factory import build_chat_model, invoke_structured
 from worker.llm.schemas import ResearchPlan
 
 if TYPE_CHECKING:
@@ -68,20 +68,6 @@ def _build_messages(
     ]
 
 
-async def _invoke_structured(llm, schema, messages, run_name: str):
-    """Invoke LLM with structured output, degrading from function_calling to json_mode."""
-    try:
-        chain = llm.with_structured_output(schema, method="function_calling")
-        return await chain.with_config({"run_name": run_name}).ainvoke(messages)
-    except Exception as e:
-        err_lower = str(e).lower()
-        if any(kw in err_lower for kw in ("tool", "function", "not support", "does not support")):
-            log.info("function_calling not supported by provider, retrying with json_mode")
-            chain = llm.with_structured_output(schema, method="json_mode")
-            return await chain.with_config({"run_name": run_name}).ainvoke(messages)
-        raise
-
-
 async def handle(ctx: "JobContext") -> dict:
     payload: dict = dict(ctx.job["payload"])
     project_id: str = payload["project_id"]
@@ -121,7 +107,7 @@ async def handle(ctx: "JobContext") -> dict:
         project_id,
         bool(feedback),
     )
-    plan: ResearchPlan = await _invoke_structured(llm, ResearchPlan, messages, "generate_plan")
+    plan: ResearchPlan = await invoke_structured(llm, ResearchPlan, messages, "generate_plan")
 
     # 5. Post-LLM cancellation check — don't write if cancelled after the LLM call
     if ctx.is_cancelled():

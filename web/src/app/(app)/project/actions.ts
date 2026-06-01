@@ -109,6 +109,26 @@ export async function approvePlan(
 
   if (error) return { error: error.message };
 
+  // Fetch subtopic ids so we can enqueue one research job per subtopic
+  const { data: subtopics, error: subtopicError } = await supabase
+    .from("subtopics")
+    .select("id")
+    .eq("project_id", projectId);
+
+  if (subtopicError) return { error: subtopicError.message };
+  if (!subtopics || subtopics.length === 0) {
+    return { error: "No subtopics found — regenerate the plan first." };
+  }
+
+  const jobs = subtopics.map((sub: { id: string }) => ({
+    project_id: projectId,
+    type: "research_subtopic",
+    payload: { project_id: projectId, subtopic_id: sub.id },
+  }));
+
+  const { error: jobError } = await supabase.from("jobs").insert(jobs);
+  if (jobError) return { error: jobError.message };
+
   revalidatePath(`/project/${projectId}/plan`);
 }
 

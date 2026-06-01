@@ -4,6 +4,25 @@ This file tracks architectural decisions and any deviations from the original PR
 
 ---
 
+## 2026-06-01 — Phase 6 architectural decisions
+
+**Decision 1 — Two-pass evaluation with avg≥3 and no-dimension-==1 store rule.**
+Sources are evaluated in two LLM passes. Pass 1 (Flash/classifier): one batched call over all candidate snippets — cheap, no extraction needed, drops irrelevant and paywalled results. Pass 2 (Pro/worker): per-source after full-text extraction — four scores (relevance, credibility, uniqueness, actionability), each 1–5. Store rule: `avg(scores) >= 3.0 AND min(scores) > 1`. Uniqueness is scored relative to the key-takeaways of already-stored sources passed in the prompt (not full text — avoids context bloat).
+
+**Decision 2 — Context-window handoff checkpoint shape: `{processed_urls, stored_count, queries, query_index, stored_takeaways, is_retry_wave}`.**
+When cumulative input tokens fed to Pro evals exceed `CONTEXT_CEILING_TOKENS` (default 100K, tunable in `config.toml [research]`), the handler enqueues a new `research_subtopic` job carrying this checkpoint, then exits cleanly. The continuation job resumes with `query_index` pointing past already-run queries and skips `processed_urls` for idempotency. DB-side `unique(project_id, url)` in `sources` makes any re-processing a no-op.
+
+**Decision 3 — `social_media` tier routes to the web provider.**
+`TIER_ROUTING` in `router.py` now includes `"social_media": "web"`. The planner already emits this tier in subtopic preferences; the router previously had no entry for it (it would return no results). No new provider is needed — the existing web provider (Brave/Tavily) handles social/news-style queries. Closes the Phase-4+5 deferred item.
+
+**Decision 4 — LangSmith key wired at `main.py` startup; both key names (`LANGCHAIN_API_KEY` / `LANGSMITH_API_KEY`) accepted.**
+`config.py` reads both env-var names (canonical: `LANGCHAIN_API_KEY`; legacy: `LANGSMITH_API_KEY`), exports both into the environment, and sets `LANGSMITH_TRACING` + endpoint vars so any installed SDK generation finds them. `load_dotenv()` is called in `main.py` before any `worker.*` import. A startup log line (`LangSmith tracing: ACTIVE/INACTIVE`) mirrors the `db.py` diagnostic pattern. Root cause of bug #1 in bug-corrections.md.
+
+**Decision 5 — `enqueue_job(conn, ...)` helper in `queue.py` accepts a connection, not the pool.**
+Continuation jobs must be enqueued from within a handler that already holds a connection (from `pool.acquire()`). Passing `conn` instead of using `get_pool()` internally allows the caller to enqueue within its own transaction context if needed, and avoids acquiring a second pool connection when the handler is already at capacity. The other queue functions use the pool directly because they are called from the loop/heartbeat infrastructure, not handlers.
+
+---
+
 ## 2026-06-01 — jsonb columns auto-(de)serialize via an asyncpg type codec at the pool boundary
 
 **Decision:** Register a `json`/`jsonb` type codec (`set_type_codec` with `encoder=json.dumps`, `decoder=json.loads`, `schema="pg_catalog"`) on **every** asyncpg connection via the pool `init` callback — `worker.db.register_json_codecs`, also used by the test pool. Consequently: jsonb columns are read as Python `dict`/`list` and written by passing Python objects directly. **Handlers and queue wrappers must never `json.dumps`/`json.loads` a jsonb value or param themselves** — the codec owns that boundary.

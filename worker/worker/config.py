@@ -41,6 +41,7 @@ with open(_cfg_path, "rb") as _f:
 
 _w   = _cfg["worker"]
 _obs = _cfg.get("observability", {})
+_res = _cfg.get("research", {})
 
 # ── Database ──────────────────────────────────────────────────────────────────
 # Direct asyncpg connection string (bypasses RLS by design — trusted server).
@@ -62,6 +63,12 @@ STALE_TIMEOUT_SECONDS: int = _w["stale_timeout_seconds"]
 # for in-flight jobs to finish before the process exits.
 GRACE_SHUTDOWN_SECONDS: float = _w["grace_shutdown_seconds"]
 
+# ── Research pipeline ──────────────────────────────────────────────────────────
+# Self-imposed ceiling on cumulative Pro-eval input tokens per handler invocation.
+# Before an eval that would push past this, the handler enqueues a continuation
+# job and exits cleanly — tunable without a code deploy.
+CONTEXT_CEILING_TOKENS: int = _res.get("context_ceiling_tokens", 100_000)
+
 # ── Search provider keys (optional — keyless Semantic Scholar + trafilatura path
 # works without them; keys are only required to use Brave/Tavily/Jina) ─────────
 BRAVE_SEARCH_API_KEY: str | None = os.environ.get("BRAVE_SEARCH_API_KEY")
@@ -72,6 +79,26 @@ JINA_API_KEY:         str | None = os.environ.get("JINA_API_KEY")
 DEEPSEEK_API_KEY: str | None = os.environ.get("DEEPSEEK_API_KEY")
 OPENAI_API_KEY:   str | None = os.environ.get("OPENAI_API_KEY")
 
-# ── Observability — set as env vars so LangChain SDK picks them up automatically
-os.environ.setdefault("LANGCHAIN_TRACING_V2", str(_obs.get("langchain_tracing", False)).lower())
-os.environ.setdefault("LANGCHAIN_PROJECT",    _obs.get("langchain_project", "ytres"))
+# ── Observability — wire LangSmith so any installed SDK version finds the key ──
+# LangChain SDK reads LANGCHAIN_API_KEY; older versions read LANGSMITH_API_KEY.
+# We read both, export both, and set the endpoint + tracing mirror so the
+# installed SDK works regardless of which env-var generation it expects.
+_langsmith_key: str | None = (
+    os.environ.get("LANGCHAIN_API_KEY") or os.environ.get("LANGSMITH_API_KEY")
+)
+_langchain_project: str = _obs.get("langchain_project", "ytres")
+_tracing_enabled: str = str(_obs.get("langchain_tracing", False)).lower()
+
+os.environ.setdefault("LANGCHAIN_TRACING_V2", _tracing_enabled)
+os.environ.setdefault("LANGSMITH_TRACING",    _tracing_enabled)
+os.environ.setdefault("LANGCHAIN_PROJECT",     _langchain_project)
+os.environ.setdefault("LANGCHAIN_ENDPOINT",   "https://api.smith.langchain.com")
+os.environ.setdefault("LANGSMITH_ENDPOINT",   "https://api.smith.langchain.com")
+
+if _langsmith_key:
+    os.environ.setdefault("LANGCHAIN_API_KEY", _langsmith_key)
+    os.environ.setdefault("LANGSMITH_API_KEY", _langsmith_key)
+
+# Exported flag — read by main.py for the startup diagnostic log.
+LANGSMITH_ACTIVE: bool = bool(_langsmith_key)
+LANGCHAIN_PROJECT: str = _langchain_project

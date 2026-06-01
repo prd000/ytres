@@ -10,7 +10,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "shared"))
 
-from schemas.job_payloads import EchoPayload, GeneratePlanPayload, WorkerActivityRow, JOB_PAYLOAD_MODELS
+from schemas.job_payloads import EchoPayload, GeneratePlanPayload, ResearchSubtopicPayload, WorkerActivityRow, JOB_PAYLOAD_MODELS
 
 
 def test_echo_payload_valid():
@@ -77,3 +77,32 @@ def test_registry_has_generate_plan():
 
 def test_registry_has_echo():
     assert "echo" in JOB_PAYLOAD_MODELS
+
+
+def test_research_subtopic_payload_valid():
+    p = ResearchSubtopicPayload(project_id="proj-1", subtopic_id="sub-1")
+    assert p.project_id == "proj-1"
+    assert p.subtopic_id == "sub-1"
+    assert p.checkpoint is None
+    assert p.progress is None
+
+
+def test_research_subtopic_payload_with_checkpoint():
+    ckpt = {"processed_urls": ["https://example.com"], "stored_count": 2}
+    p = ResearchSubtopicPayload(project_id="p", subtopic_id="s", checkpoint=ckpt)
+    assert p.checkpoint == ckpt
+
+
+def test_research_subtopic_payload_missing_subtopic_id_raises():
+    with pytest.raises(ValidationError):
+        ResearchSubtopicPayload(project_id="p")  # type: ignore[call-arg]
+
+
+def test_research_subtopic_payload_missing_project_id_raises():
+    with pytest.raises(ValidationError):
+        ResearchSubtopicPayload(subtopic_id="s")  # type: ignore[call-arg]
+
+
+def test_registry_has_research_subtopic():
+    assert "research_subtopic" in JOB_PAYLOAD_MODELS
+    assert JOB_PAYLOAD_MODELS["research_subtopic"] is ResearchSubtopicPayload

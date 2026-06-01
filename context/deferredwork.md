@@ -135,10 +135,21 @@ REINDEX INDEX CONCURRENTLY <index_name>;
 ```
 HNSW is the no-tuning upgrade path for a future migration when scale justifies it.
 
-### Phase 6 deferred wiring
+### ~~Phase 6 deferred wiring~~ — RESOLVED 2026-06-01
 
-- `approvePlan` Server Action transitions status to `"researching"` but does NOT enqueue `research_subtopic` jobs — there is no handler for that job type yet. Phase 6 will add the handler and wire `approvePlan` to enqueue one job per subtopic.
-- `social_media` tier is stored and displayed but has no search router entry yet. Phase 6 will route it to a web/Reddit provider.
+- ~~`approvePlan` did not enqueue `research_subtopic` jobs~~ — now enqueues one job per subtopic.
+- ~~`social_media` tier had no router entry~~ — now routes to the web provider (`TIER_ROUTING`).
+
+### Phase 6 live-run verification (requires real Supabase + API keys)
+
+Implemented and statically verified. The following require a live stack to confirm end-to-end:
+1. **LangSmith tracing** — with `DEEPSEEK_API_KEY` + `LANGCHAIN_API_KEY` set, run the worker and confirm startup log says `tracing: ACTIVE` and a trace appears in the LangSmith `ytres` project.
+2. **Full research pipeline** — create a project → approve plan → watch Research tab update live (queued→running→stored counts→complete) without manual refresh.
+3. **Sources stored** — verify `sources` and `source_chunks` rows appear with correct scores and embeddings.
+4. **Why-nothing report** — trigger on a deliberately barren subtopic; confirm `worker_activity.why_nothing_report` is populated.
+5. **Cancel mid-run** — delete the project during research; confirm worker stops and stored sources are preserved until cascade delete.
+
+Add `LANGCHAIN_API_KEY` to `worker/.env` and Render env vars before deploying Phase 6.
 
 ## Open questions to resolve
 

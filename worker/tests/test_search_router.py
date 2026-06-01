@@ -170,3 +170,33 @@ async def test_result_provider_tagged_correctly(cfg):
     providers = {r.provider for r in response.results}
     assert "mock_web" in providers
     assert "mock_academic" in providers
+
+
+async def test_social_media_routes_to_web(cfg):
+    """social_media tier must route to the web provider (not academic)."""
+    web = _MockWeb()
+    web.called_with = []
+    academic = _MockAcademic()
+    academic.called_with = []
+
+    router = SearchRouter(web_provider=web, academic_client=academic, cfg=cfg)
+    response = await router.search("trending topic", ["social_media"])
+
+    assert len(web.called_with) == 1, "social_media should route to web provider"
+    assert len(academic.called_with) == 0
+    assert response.failures == []
+
+
+async def test_social_media_mixed_with_academic(cfg):
+    """social_media + academic → one web call and one academic call."""
+    web = _MockWeb()
+    web.called_with = []
+    academic = _MockAcademic()
+    academic.called_with = []
+
+    router = SearchRouter(web_provider=web, academic_client=academic, cfg=cfg)
+    response = await router.search("q", ["social_media", "academic"])
+
+    assert len(web.called_with) == 1
+    assert len(academic.called_with) == 1
+    assert len(response.results) == 2

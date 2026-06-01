@@ -17,7 +17,7 @@ A map of the project codebase — one line per file with its purpose. Update whe
 
 ## `agent/` — Active planning artifacts
 
-_(no active plans — all phases through 5 complete)_
+_(no active plans — all phases through 6 complete)_
 
 ## `agent-complete/` — Completed planning artifacts
 
@@ -27,6 +27,7 @@ _(no active plans — all phases through 5 complete)_
 | `phase-1-plan.md` | Phase 1 implementation plan (Supabase-native, FastAPI-free) — schema/RLS, job queue + RPCs, worker scaffold, Supabase auth wiring (complete) |
 | `phase-3-plan.md` | Phase 3 implementation plan — search infrastructure: web providers, Semantic Scholar, extraction chain, router (complete) |
 | `phase-4-5-plan.md` | Phase 4+5 implementation plan — storage/embeddings + planner + Realtime + social_media tier (complete) |
+| `phase-6-plan.md` | Phase 6 implementation plan — worker research pipeline, LangSmith fix, live Research tab (complete) |
 
 ---
 
@@ -64,6 +65,7 @@ _(no active plans — all phases through 5 complete)_
 | `handlers/__init__.py` | `HANDLERS` registry mapping job type strings to handler coroutines |
 | `handlers/echo.py` | Phase 1 proof-of-concept handler: checkpoints through steps, echoes payload.message, completes |
 | `handlers/planner.py` | Phase 5 planner handler (job type `generate_plan`): reads project, calls DeepSeek coordinator, writes subtopics in transaction |
+| `handlers/research.py` | Phase 6 research handler (job type `research_subtopic`): full pipeline — query gen → search → pass-1 filter → extraction → pass-2 eval → store with embeddings. Supports checkpointing, context-window handoff, source cap (12), auto-retry, why-nothing report, cancellation. |
 
 ### `worker/worker/llm/` — Phase 5 LLM layer
 
@@ -82,6 +84,7 @@ _(no active plans — all phases through 5 complete)_
 | `chunking.py` | `count_tokens()` + `chunk_text()` — pure, no I/O; tiktoken cl100k_base sliding window |
 | `embeddings.py` | `Embedder` class wrapping `AsyncOpenAI`; batched ≤128, order-preserving, dimension-asserted |
 | `store.py` | `store_source()` (upsert + subtopic link) + `store_chunks()` (executemany `$N::vector` string cast) |
+| `activity.py` | `upsert_activity()` (ON CONFLICT update worker_activity) + `set_subtopic_status()` (update subtopics.status enum) — Phase 6 progress writes |
 | `search.py` | `match_chunks()` — calls the SQL function, returns `ChunkMatch` list |
 
 ### `worker/worker/search/` — Phase 3 search infrastructure
@@ -125,6 +128,7 @@ _(no active plans — all phases through 5 complete)_
 | `test_storage.py` | Integration: store_source insert/dedup/idempotent link; store_chunks vector rows |
 | `test_hybrid_search.py` | Integration: vector-near ranks high, keyword surfaces, project scoping, match_count limit, scores descending |
 | `test_planner.py` | Mocked LLM: subtopic count/order/enum-array, regenerate, idempotent, cancel pre/post-LLM, status unchanged |
+| `test_research.py` | Mocked LLM + router + embedder + extraction + DB: store rule pass/fail, source cap (12), min-target triggers second wave, why-nothing, pre/post-LLM cancel, handoff enqueues continuation, resume skips processed URLs, activity upsert sequence |
 
 | Root file | Purpose |
 |---|---|
@@ -137,7 +141,7 @@ _(no active plans — all phases through 5 complete)_
 | File | Purpose |
 |---|---|
 | `schemas/__init__.py` | Package marker |
-| `schemas/job_payloads.py` | Pydantic models: EchoPayload, WorkerActivityRow, JOB_PAYLOAD_MODELS registry |
+| `schemas/job_payloads.py` | Pydantic models: EchoPayload, GeneratePlanPayload, ResearchSubtopicPayload, WorkerActivityRow, JOB_PAYLOAD_MODELS registry |
 
 ---
 

@@ -12,10 +12,11 @@ if TYPE_CHECKING:
 
 # Maps each tier to which backend handles it.
 TIER_ROUTING: dict[str, str] = {
-    "academic":   "academic",
-    "government": "web",
-    "news":       "web",
-    "industry":   "web",
+    "academic":    "academic",
+    "government":  "web",
+    "news":        "web",
+    "industry":    "web",
+    "social_media": "web",
 }
 
 

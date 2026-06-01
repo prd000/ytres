@@ -46,3 +46,24 @@ async def reclaim_stale_jobs(timeout_seconds: int) -> None:
 async def cancel_project_jobs(project_id: str) -> None:
     pool = await get_pool()
     await pool.execute("select cancel_project_jobs($1::uuid)", project_id)
+
+
+async def enqueue_job(
+    conn: asyncpg.Connection,
+    project_id: str,
+    job_type: str,
+    payload: dict,
+) -> str:
+    """Insert a new job row via an existing connection and return its id.
+
+    Accepts a connection (not the pool) so callers can enqueue within an
+    existing transaction context. Used by handlers to enqueue continuation jobs
+    (e.g. context-window handoff in the research pipeline).
+    """
+    row = await conn.fetchrow(
+        "INSERT INTO jobs (project_id, type, payload) VALUES ($1::uuid, $2, $3) RETURNING id",
+        project_id,
+        job_type,
+        payload,
+    )
+    return str(row["id"])

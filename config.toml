@@ -8,6 +8,10 @@ watchdog_interval     = 60.0  # how often to scan for stale jobs
 stale_timeout_seconds = 90    # job is reclaimable after this many seconds without a heartbeat
 grace_shutdown_seconds = 30.0 # time allowed for in-flight jobs to finish on SIGTERM
 
+# ── Research pipeline ──────────────────────────────────────────────────────────
+[research]
+context_ceiling_tokens = 100000  # self-imposed Pro-eval token ceiling per handler run; tunable
+
 # ── Observability ──────────────────────────────────────────────────────────────
 [observability]
 langchain_tracing = true

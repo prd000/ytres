@@ -53,6 +53,30 @@ export function ProjectRealtime({ projectId }: ProjectRealtimeProps) {
           router.refresh();
         }
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "worker_activity",
+          filter: `project_id=eq.${projectId}`,
+        },
+        () => {
+          router.refresh();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "sources",
+          filter: `project_id=eq.${projectId}`,
+        },
+        () => {
+          router.refresh();
+        }
+      )
       .subscribe();
 
     return () => {

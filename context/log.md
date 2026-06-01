@@ -1,396 +1,50 @@
 # Build Log
 
-A running record of everything built/changed. Newest first.
+Newest-first. One entry per milestone or significant bug fix.
 
 ---
 
-## 2026-06-01 — Feature: delete a project (header button + confirmation dialog, cascade DB delete)
+## Phase 6 — Research pipeline (2026-06-01)
+Full `research_subtopic` worker handler: query gen → Brave/Tavily search → Pass-1 batch filter → extraction → Pass-2 per-source eval → store (≤12 sources, min-3 target, auto-retry wave, context-ceiling handoff). LangSmith tracing fixed (`load_dotenv` before worker imports; `LANGSMITH_ACTIVE` flag). `invoke_structured` lifted from planner into `factory.py` (shared). New `storage/activity.py` (upsert + status helper). `approvePlan` action bulk-enqueues one `research_subtopic` job per subtopic. Realtime subscriptions added for `worker_activity` + `sources`. 9 new tests; `ResearchSubtopicPayload` added to contract.
 
-- **Request:** `bug-corrections.md` "Major Features to add" #2 — a delete button for projects that also deletes from the database.
-- **Backend — no migration needed (verified the schema already supports it):** `projects_delete` RLS policy (`0005_rls_policies.sql:53`, `for delete using (owner_id = auth.uid())`) already gates deletion to the owner, and every child table (`subtopics`, `sources`, `source_subtopics`, `source_chunks`, `chat_messages`, `reports`, `jobs`, `worker_activity`, `project_members`) references `projects(id) on delete cascade`. A single `DELETE FROM projects` purges all derived data with no orphans.
-- **`web/src/app/(app)/project/actions.ts`** — new `deleteProject(projectId, _prev, _formData)` Server Action + `DeleteProjectState`, mirroring `approvePlan`/`regeneratePlan` (auth check → mutate → revalidate/redirect). Calls the existing `cancel_project_jobs` RPC best-effort first so a worker mid-job exits gracefully instead of erroring once the cascade removes its job row, then `supabase.from("projects").delete().eq("id", projectId)` (RLS enforces owner-only), then `revalidatePath("/dashboard")` + `redirect("/dashboard")`.
-- **`web/src/components/layout/DeleteProjectButton.tsx`** (new, `"use client"`) — error-toned "Delete" trigger styled to match the existing Cancel button; opens a Radix Dialog confirmation (same `@radix-ui/react-dialog` pattern as `TopNav`) with `Dialog.Title`/`Dialog.Description` for a11y. Confirm submits a `<form action>` bound to `deleteProject` via `useActionState`, showing a pending "Deleting…" state and rendering `state.error` inline on failure. Modal composed from existing tokens (`bg-surface-card`, `border-hairline`, `text-error`, `bg-error`/`text-on-primary`) — DESIGN.md has no modal primitive.
-- **`web/src/components/layout/ProjectShellHeader.tsx`** — wrapped the right-side actions in a `flex gap-2` cluster and rendered `<DeleteProjectButton projectId={project.id} />` beside the conditional Cancel button (header stays a server component).
-- **Verified:** `npx tsc --noEmit` clean; eslint clean (only the pre-existing `_prev`/`_formData` unused-arg warnings shared by the other actions). Live click-through + DB cascade check still to be run against a running stack — see the plan's verification section.
+## Feature: delete project (2026-06-01)
+`deleteProject` Server Action (cancel jobs RPC → cascade `DELETE FROM projects` → redirect). New `DeleteProjectButton` client component (Radix Dialog confirm, error display). Rendered in `ProjectShellHeader` beside Cancel.
 
-## 2026-06-01 — Worker bug: `generate_plan` crashed on `dict(ctx.job["payload"])` — fixed with an asyncpg json/jsonb codec
+## Bug: generate_plan crash — asyncpg jsonb codec (2026-06-01)
+`ctx.job["payload"]` arrived as a raw JSON string; `dict(str)` iterated chars → ValueError. Fix: `register_json_codecs()` in `db.py` added as pool `init=` so all jsonb columns decode to dict on read. `queue.py` heartbeat updated to pass dict directly (was double-encoding). Regression test added.
 
-- **Symptom (from the jobs table):** `generate_plan` jobs failed in production with `ValueError: dictionary update sequence element #0 has length 1; 2 is required` at `worker/worker/handlers/planner.py:86` (`payload: dict = dict(ctx.job["payload"])`).
-- **Root cause:** asyncpg returns `json`/`jsonb` columns as **raw JSON strings** unless a type codec is registered, and none was. The worker claims jobs via the `claim_job` RPC (`returns setof jobs`), so `ctx.job["payload"]` arrived as a string like `'{"project_id": "…"}'`; `dict()` then iterates it char-by-char (each char has length 1, not 2) → ValueError. The same latent bug affected `planner.py:107` (`source_tier_settings`, jsonb) and `echo.py:21` (payload). It stayed hidden because the planner unit tests hand-build `ctx.job["payload"]` as a real dict and bypass `claim_job`, and the jsonb-read path needs a live local Supabase stack that wasn't exercised.
-- **Fix (root cause, at the DB boundary):**
-  - `worker/worker/db.py` — new `register_json_codecs(conn)` registers `set_type_codec` for both `json` and `jsonb` (`encoder=json.dumps`, `decoder=json.loads`, `schema="pg_catalog"`); passed as the pool `init=` callback. Every jsonb column now decodes to a dict/list on read and encodes back on write, so handlers can treat `ctx.job["payload"]` (and any jsonb column) as a plain dict. **No handler code changed** — `dict(...)` on an already-decoded dict is a harmless copy.
-  - `worker/worker/queue.py` — `heartbeat_job` now passes the `payload` **dict** directly (was `json.dumps(...)` + `$2::jsonb`), which would double-encode once the jsonb encoder is registered. `None` still binds as SQL `NULL`, preserving the `coalesce(p_payload, payload)` checkpoint semantics.
-- **Tests (fidelity + regression):** `worker/tests/conftest.py` registers the same codec on the test pool (imported lazily inside the `pool` fixture so collection doesn't require `SUPABASE_DB_URL`) and `_enqueue_job` passes a dict; `worker/tests/test_queue.py` passes checkpoint dicts directly and reads jsonb columns as dicts (dropped the now-wrong `json.dumps`/`json.loads`), and adds `test_claim_job_payload_is_dict` — a regression test that drives the real `claim_job` RPC and asserts `payload` is a `dict`. The pre-existing planner/queue tests would not have caught this (they bypass `claim_job` or pre-serialized manually).
-- **Pre-check:** confirmed `queue.py` was the only production jsonb (de)serialization site; the only jsonb columns are `jobs.payload`, `projects.source_tier_settings`, `findings.citations` (the last has no worker writes yet). pgvector is unaffected — it uses the `$N::vector` string-cast path, not a codec.
-- **Verification status:** `py_compile` clean on all changed files; all 20 worker tests **collect** cleanly including the new regression test. The live integration tests (`pytest worker/`) and the end-to-end `generate_plan` run were **not executed here** — this machine has no Docker/Supabase CLI and port 54322 is closed. They must be run where the local stack (or CI) is available; see the plan's verification section.
+## Bug: RLS blocked INSERT…RETURNING (2026-06-01)
+`createProject` used `.select("id")` → `INSERT … RETURNING`, which requires the SELECT policy to pass on the new row. `can_access_project()` (SECURITY DEFINER) re-queries `projects` — new row not yet visible in that snapshot → 42501. Fix: migration `0010` adds `owner_id = auth.uid()` short-circuit to the SELECT policy.
 
-## 2026-06-01 — Bug #1 FIXED (real root cause): `projects_select` RLS broke `INSERT … RETURNING`
+## Feature: email confirmation route (2026-06-01)
+New `web/src/app/auth/confirm/route.ts` — reads `token_hash`+`type`, calls `verifyOtp` via SSR client (writes session cookie). `signup` action sets `emailRedirectTo` to `/auth/confirm`. Login page made async to read `searchParams`; `LoginForm` shows redirect error until user submits.
 
-- **Symptom:** creating a project failed with `42501 new row violates row-level security policy for table "projects"`.
-- **Diagnosis (logged + reproduced, not guessed):** built throwaway probes that signed in as the real user and replayed the exact insert. Findings, in order:
-  1. The user's JWT is fine — a valid `authenticated` **ES256** token (the project uses Supabase's new `sb_publishable_`/`sb_secret_` API keys + ECC P-256 JWT signing keys). `getUser()` and `auth.uid()` both resolve to the correct user id; the JWT/signing-key angle was a **red herring**.
-  2. The `projects_insert` policy (`with check (owner_id = auth.uid())`) and all helper functions are present and correct in the live DB.
-  3. Simulating the authenticated PostgREST context (`set role authenticated` + `request.jwt.claims`) against the live DB showed the decisive split: **plain `INSERT` succeeds, but `INSERT … RETURNING` fails.**
-- **Root cause:** `createProject` inserts with `.select("id")` → `INSERT … RETURNING`, which requires the **SELECT** policy to pass on the new row. The old `projects_select` used `using (can_access_project(id))`, and `can_access_project()` (SECURITY DEFINER, STABLE) determines ownership by **re-querying the `projects` table** for that id. During `INSERT … RETURNING` the just-inserted row isn't visible to that lookup's snapshot, so it returns false → the row fails the SELECT policy → the whole statement is rejected. The error message is misleading (it reads like an INSERT `with check` failure).
-- **Fix (DB-only — app code unchanged):** `supabase/migrations/0010_fix_projects_select_returning.sql` replaces the policy with `using (owner_id = auth.uid() or can_access_project(id))`. The direct owner check is valid during `RETURNING`; the SECURITY DEFINER function is kept only for the shared-member path (avoids `projects`↔`project_members` recursion). Validated in a rolled-back transaction (failed before, succeeds after), then **applied to the live DB**. Multi-user correct: owners and members keep identical visibility, non-members still blocked. Child tables (`subtopics`, `sources`, …) were never affected — their policies check the already-committed parent `project_id`.
-- **Verified:** `npx tsc --noEmit` clean; live `projects_select` now reads `((owner_id = auth.uid()) OR can_access_project(id))`; authenticated `INSERT … RETURNING` succeeds. No code redeploy required.
+## Bug: Tailwind token collision shrank max-w utilities (2026-06-01)
+`--spacing-sm/md` custom tokens shadow Tailwind v4's container scale → `.max-w-md` compiled to 16px. Fix: added semantic `--container-card/panel/content` tokens; swapped all `max-w-{sm,md}` usages to new utilities. Previously hotfixed with arbitrary `max-w-[28rem]` values.
 
-## 2026-06-01 — Server-side email confirmation (`/auth/confirm` route + `emailRedirectTo`)
+## Bug: proxy.ts wrong location (2026-05-31)
+`web/proxy.ts` → `web/src/proxy.ts` so Next.js 16 picks it up alongside `app/`. Unauthenticated users now redirected to `/login`; "Not authenticated" on project creation resolved.
 
-- **Problem:** Supabase confirmation emails linked to `localhost:3000` (the hosted project's default Site URL) and, even with the right host, the default implicit flow only sets a client-side token — it never establishes the cookie-based **server** session that `@supabase/ssr` + `proxy.ts` rely on. So confirmed users weren't reliably logged in server-side.
-- **New** `web/src/app/auth/confirm/route.ts` — `GET` handler that reads `token_hash` + `type` from the email link and calls `supabase.auth.verifyOtp(...)`. Verifying through the SSR server client writes the session cookie (route handlers can mutate cookies), leaving the user authenticated on the server. Builds the post-confirm absolute redirect from `x-forwarded-host`/`x-forwarded-proto` (Render terminates TLS upstream), falls back to `request.nextUrl.origin`. `next` param is path-allow-listed (must start with `/`, not `//`) to avoid open-redirect; default `/dashboard`. On failure redirects to `/login?error=…`.
-- **`web/src/app/(auth)/actions.ts`** — `signup` now sets `options.emailRedirectTo = ${origin}/auth/confirm`, deriving `origin` from the request `headers()` so the link returns to whatever host the user signed up on (localhost in dev, Render in prod).
-- **`web/src/app/(auth)/login/page.tsx`** — now an `async` server component that awaits `searchParams` (Promise in Next 16) and passes `error` to the form.
-- **`web/src/components/features/auth/LoginForm.tsx`** — accepts `initialError?`; shows `?error=` from a failed/expired confirmation link until the user submits, after which the action's own error takes over.
-- The proxy matcher leaves `/auth/confirm` untouched (it matches neither `APP_PATTERN` nor `AUTH_PATTERN`), so the handler runs and its `verifyOtp` cookie persists for the follow-up `/dashboard` request.
-- **Verified:** `npx tsc --noEmit` clean.
-- **Requires two manual Supabase dashboard steps to take effect** — see `deferredwork.md` (Site URL + Redirect URLs, and the "Confirm signup" email template must point at `{{ .SiteURL }}/auth/confirm?...`).
+## Phase 4+5 — LLM, storage, planner, Realtime (2026-05-31)
+LLM layer (`llm/config.py`, `factory.py`, `schemas.py`) using DeepSeek via OpenAI-compatible endpoint. Storage: tiktoken chunker, batched embedder, `store_source`/`store_chunks` (pgvector `$N::vector` cast), hybrid search via RRF SQL function. Planner handler (`generate_plan` job): coordinator → structured output → delete+insert subtopics (idempotent). Migrations: ivfflat + GIN indexes, `match_chunks()` RRF function, `social_media` tier enum. Web: `createProject` enqueues plan job; `PlanTab` rewired with Approve/Regenerate actions; `ProjectRealtime` component subscribes to subtopics+projects changes.
 
-## 2026-06-01 — Bug #1 follow-up: semantic layout-width tokens (replaces the arbitrary-value hotfix)
+## Phase 3 — Search infrastructure (2026-05-31)
+Full `worker/worker/search/` package: Brave + Tavily web providers, Semantic Scholar academic, trafilatura→Jina extraction chain, tier-based `SearchRouter`. Tenacity retry, provider interface ABCs, config-driven provider selection. 57 mocked tests, no real network required.
 
-- Adopted the DESIGN.md-faithful fix for the token collision (see `decisions.md` 2026-06-01). DESIGN.md untouched; `--spacing-*` tokens untouched.
-- `globals.css` `@theme`: added `--container-card: 28rem`, `--container-panel: 24rem`, `--container-content: 75rem` (~1200px, DESIGN.md's max content width), plus a comment documenting the collision and the convention to use these instead of the bare `max-w-{sm,md,lg,xl}` utilities.
-- Swapped components off arbitrary values / hard-coded widths onto the semantic utilities:
-  - `AuthShell.tsx` → `max-w-card` (and removed the now-redundant explanatory comment).
-  - `EmptyState.tsx`, `ChatTab.tsx` → `max-w-panel`.
-  - `TopNav.tsx` mobile drawer → `max-w-panel`.
-  - `PageContainer.tsx` and `ProjectShellHeader.tsx` → `max-w-content` (was `max-w-[1200px]` in both).
-- **Verified** against a clean production build: generated CSS has `.max-w-card{max-width:var(--container-card)}` etc. with `--container-card:28rem` / `--container-panel:24rem` / `--container-content:75rem`; `/login` serves 200 with `w-full max-w-card mx-auto`; no leftover hard-coded `max-w-[…]` widths and no dead `.max-w-md` rule.
+## Fix: DB URL encoding + IPv6 diagnostics (2026-06-01)
+Two-step fix for Render deploy crashes: (1) `_encode_db_url()` in `config.py` percent-encodes password component (handles `?%@,`); (2) startup DNS logging identifies IPv6-only hosts and names the Session Pooler fix. Port 6543 (transaction pooler) sets `statement_cache_size=0`.
 
-## 2026-06-01 — Bug #1 fix (CORRECTED): Tailwind token collision shrank `max-w-{sm,md}` to spacing values
+## Config refactor: secrets vs tuning (2026-05-31)
+Created `config.toml` for worker tuning (concurrency, poll/heartbeat/watchdog intervals, observability). `worker/config.py` reads tuning via `tomllib`; `.env` contains secrets only.
 
-- **Real root cause (found by inspecting the generated production CSS):** the custom design tokens in `globals.css` `@theme` — `--spacing-sm: .75rem`, `--spacing-md: 1rem`, etc. — **shadow Tailwind v4's container scale** for the matching t-shirt-size keys. So the build emits `.max-w-md{max-width:var(--spacing-md)}` (**16px**) and `.max-w-sm{max-width:var(--spacing-sm)}` (**12px**) instead of `--container-md` (28rem) / `--container-sm` (24rem). The login card was therefore capped at 16px → the "thin column". `/project/new` was unaffected because it uses `max-w-2xl` (no `--spacing-2xl` exists, so it correctly resolves to `--container-2xl`).
-- **Why the first attempt didn't work:** the earlier `items-center → stretch` + `mx-auto` change (commit 67e6345) treated a non-issue; the wrapper was capped at 16px regardless of how it was centered.
-- **Fix:** replaced the four colliding `max-w-{sm,md}` usages with explicit arbitrary widths that bypass the namespace collision (`max-w-[28rem]` for the auth card, `max-w-[24rem]` elsewhere):
-  - `web/src/components/layout/AuthShell.tsx` — `max-w-md` → `max-w-[28rem]` (login + signup card; the reported bug).
-  - `web/src/components/features/dashboard/EmptyState.tsx` — `max-w-sm` → `max-w-[24rem]` (the dashboard "narrow" symptom).
-  - `web/src/components/features/chat/ChatTab.tsx` — `max-w-sm` → `max-w-[24rem]` (empty-state hint).
-  - `web/src/components/layout/TopNav.tsx` — mobile menu drawer `max-w-sm` → `max-w-[24rem]` (was a 12px-wide drawer, broken on mobile).
-- **Verified** against a clean production build (`next build` + `next start`): generated CSS contains `max-width:28rem`/`24rem`, no dead `.max-w-md` rule, `/login` renders 200 with `w-full max-w-[28rem] mx-auto`.
-- **Follow-up (see deferredwork.md):** the named `--spacing-*` tokens are unused as spacing utilities and collide with the container scale — a latent footgun for any future `max-w-{xs,sm,md,lg,xl}`. Recommend removing/renaming them at the source.
+## Phase 1 — Infrastructure & auth (2026-05-31)
+Supabase migrations 0001–0006: pgvector, core tables, jobs+activity, sharing groundwork, RLS policies+helpers, queue RPCs (`claim_job`, `heartbeat_job`, `reclaim_stale_jobs`, `complete_job`, `fail_job`, `cancel_project_jobs`). Worker: asyncpg pool, queue wrappers, claim/dispatch loop with semaphore concurrency, per-job heartbeat, watchdog, graceful SIGTERM drain. Web: `@supabase/ssr` server/browser clients, `proxy.ts` session refresh + route guards, login/signup/signout Server Actions, `getCurrentUser` DAL. Shared Pydantic job payload schemas. `render.yaml` for two-service deploy.
 
-## 2026-06-01 — Bug #1 first attempt (superseded): AuthShell centering refactor
+## Feature: dark mode (2026-05-29)
+CSS-variable remapping under `.dark` selector (warm-dark palette, no `dark:` utility sprinkling). `next-themes` class strategy. `ThemeProvider` + `ThemeToggle` components. Wired into root layout and TopNav.
 
-- Changed `AuthShell` from `flex flex-col items-center` + `w-full` to `flex flex-col` + `w-full max-w-md mx-auto`, on the (incorrect) theory that `items-center` collapsed the card. Did not fix the bug — see the corrected entry above for the real cause. The `mx-auto` / stretch structure was kept (harmless, idiomatic).
+## Phase 0 — Frontend shell (2026-05-29)
+Next.js 16 / React 19 / Tailwind v4 in `web/`. Design tokens from DESIGN.md. All routes: `/dashboard`, `/project/[id]/{plan,research,sources,chat,report}`. UI component library (Button, Badge, StatusPill, ScorePill, etc.). Mock data layer with swap-ready `client.ts`. Persistent project shell layout (Phase 7 Realtime seam).
 
-## 2026-05-31 — Phase 4 + 5 (Storage, Embeddings, Planner) + Realtime + social_media tier
-
-### Part A — Worker LLM layer (`worker/worker/llm/`)
-- `llm/config.py` — frozen `LLMConfig` dataclass + `from_env()` reading `config.toml [llm]` + env vars.
-- `llm/factory.py` — `build_chat_model(cfg, role)` returning `ChatOpenAI` pointed at DeepSeek's OpenAI-compatible endpoint (`base_url` in config); provider swap = config edit.
-- `llm/schemas.py` — `SourceTier` literal, `PlannedSubtopic`, `ResearchPlan` (3–8 subtopics guardrail) for structured output.
-- `config.toml` — added `[llm]` block with model IDs, temperature, timeout, embedding model/dims.
-- `worker/worker/config.py` — added `DEEPSEEK_API_KEY` and `OPENAI_API_KEY` from env.
-- `worker/pyproject.toml` — added `langchain-core>=0.3`, `langchain-openai>=0.2`, `openai>=1.40`, `tiktoken>=0.7`.
-
-### Part B — Storage & Embeddings (`worker/worker/storage/`)
-- `storage/chunking.py` — `count_tokens()` + `chunk_text()` using tiktoken cl100k_base; sliding window with configurable chunk/overlap tokens.
-- `storage/embeddings.py` — `Embedder` wrapping `AsyncOpenAI`; batched ≤128, order-preserving, dimension-asserted.
-- `storage/store.py` — `store_source()` (upsert with `xmax=0` created flag + subtopic link) and `store_chunks()` (executemany with `$N::vector` string-cast); no pgvector codec required.
-- `storage/search.py` — `match_chunks()` wrapper calling the `match_chunks` SQL function, returns `ChunkMatch` list.
-
-### Part C — Planner handler (`worker/worker/handlers/planner.py`, job type `generate_plan`)
-- `handlers/planner.py` — reads project row, builds coordinator messages, invokes DeepSeek with `function_calling`→`json_mode` fallback, delete-then-inserts subtopics in a transaction (idempotent on resume/regenerate).
-- `shared/schemas/job_payloads.py` — added `GeneratePlanPayload`; registered `generate_plan` in `JOB_PAYLOAD_MODELS`.
-- `handlers/__init__.py` — registered `"generate_plan": planner_handle`.
-
-### Part D — SQL migrations
-- `0007_vector_indexes.sql` — ivfflat cosine index + GIN FTS index + btree project_id index on `source_chunks`.
-- `0008_match_chunks.sql` — `match_chunks()` SQL function; vector CTE + keyword CTE full-outer-joined via Reciprocal Rank Fusion.
-- `0009_social_media_tier.sql` — `ALTER TYPE source_tier ADD VALUE IF NOT EXISTS 'social_media'`.
-
-### Part E — Web Server Actions + Plan tab rewrite
-- `web/src/app/(app)/project/actions.ts` — `createProject` now sets `status: "planning"` and enqueues `generate_plan` job on submit. Added `regeneratePlan` (insert job + set planning + revalidate) and `approvePlan` (set researching + revalidate) Server Actions.
-- `web/src/components/features/plan/PlanTab.tsx` — rewrote action area: loading dots when planning with no subtopics; real Approve/Regenerate forms via `useActionState` + `.bind()`; two separate forms sharing a textarea via HTML `form` attribute (no nesting).
-
-### Part F — Realtime (pulled forward)
-- `web/src/components/features/realtime/ProjectRealtime.tsx` — `"use client"` component subscribing to `postgres_changes` on `subtopics` + `projects` filtered by project ID; calls `router.refresh()` on any event.
-- `web/src/app/(app)/project/[id]/layout.tsx` — mounts `<ProjectRealtime projectId={id} />` so subscription stays live across tab switches.
-
-### Part G — `social_media` source tier (cross-cutting)
-- `web/src/lib/data/types.ts` — `SourceTier` union + `socialMedia: boolean` to `SourceTierSettings`.
-- `web/src/components/features/project/NewProjectForm.tsx` — added `{ key: "social_media", label: "Social media" }` tier checkbox.
-- `web/src/app/(app)/project/actions.ts` (createProject) — reads `social_media` checkbox → `socialMedia` in `SourceTierSettings`.
-- `web/src/components/features/plan/PlanTab.tsx` — added `social_media: "Social media"` to `TIER_LABELS`; renders in source-preferences block and subtopic tier badges.
-
-### Tests
-- `worker/tests/test_chunking.py` — pure unit tests (empty, short, long, overlap error, token limits).
-- `worker/tests/test_embeddings.py` — fake AsyncOpenAI client; dimension check, order preservation, empty→no call, 300-text batching.
-- `worker/tests/test_storage.py` — integration vs real PG: store_source insert/dedup/idempotent link; store_chunks vector rows.
-- `worker/tests/test_hybrid_search.py` — integration: vector-near ranks high, keyword surfaces, project scoping, match_count limit, scores descending.
-- `worker/tests/test_planner.py` — mocked LLM; subtopic count/order/enum-array; regenerate replaces; idempotent resume; pre/post-LLM cancellation; status unchanged; missing project raises; checkpoint sequence.
-- `worker/tests/test_contract.py` — extended with `GeneratePlanPayload` valid/invalid/missing-id and registry assertions.
-
----
-
-## 2026-05-31 — Fix "Not authenticated" on project creation + auth page spacing (bug #1)
-
-### Root cause
-`web/proxy.ts` was at the Next.js project root, but the app lives under `web/src/app/`. Next.js 16 only picks up `proxy.ts` when it sits alongside `app/` — i.e. at `web/src/proxy.ts`. With the proxy silently ignored, unauthenticated users reached protected routes without being redirected to `/login`, and only hit the wall when `createProject`'s `supabase.auth.getUser()` returned null.
-
-### Changes
-- **`web/proxy.ts` → `web/src/proxy.ts`** (content unchanged): proxy now runs on every request, refreshing the Supabase session and redirecting unauthenticated visitors away from `(app)` routes. "Not authenticated" error on project creation is resolved.
-- **`web/src/components/layout/AuthShell.tsx`**: card widened `max-w-sm` → `max-w-md` (448px); header bottom margin `mb-6` → `mb-8`; subtitle top margin `mt-1` → `mt-2` — matches DESIGN.md generous-whitespace intent.
-- **`web/src/components/features/auth/LoginForm.tsx`** and **`SignupForm.tsx`**: field gap `gap-4` → `gap-5`; label↔input gap `gap-1.5` → `gap-2`; submit button top margin `mt-2` → `mt-4` for editorial breathing room.
-
----
-
-## 2026-05-31 — Remove dummy data; wire real Supabase reads; add create-project flow
-
-### What changed
-
-**Data layer — `web/src/lib/data/client.ts` (rewritten):**
-- All seven data-access functions now query live Supabase tables via `createClient()` from `@/lib/supabase/server` (RLS-enforced, returns only the signed-in user's rows).
-- Private mapper helpers (`mapProject`, `mapSubtopic`, `mapSource`, `mapWorkerActivity`, `mapChatMessage`, `mapReport`) translate snake_case DB columns → camelCase domain types and wrap `timestamptz` strings as `Date`.
-- `getSources` uses `select("*, source_subtopics(subtopic_id)")` to resolve the many-to-many subtopic join into `subtopicIds[]`.
-- On Supabase error, functions throw (page error boundary handles it); empty results return `[]`/`null` so existing empty-states render.
-- Added `"server-only"` import guard.
-
-**`web/src/lib/data/fixtures.ts` — deleted.** Confirmed no remaining imports.
-
-**New create-project flow:**
-- `web/src/app/(app)/project/actions.ts` — `"use server"` `createProject(formData)` Server Action: gets user via `supabase.auth.getUser()`, inserts into `projects` with `owner_id`, `research_question`, `source_tier_settings`, `status: "draft"`, then `redirect(/project/${id}/plan)`. Error shape mirrors `@/app/(auth)/actions.ts`.
-- `web/src/app/(app)/project/new/page.tsx` — server component that renders `NewProjectForm` inside a centered `PageContainer` layout.
-- `web/src/components/features/project/NewProjectForm.tsx` — `"use client"` form using `useActionState(createProject)`. Fields: research-question textarea (required), four tier checkboxes (academic/government default-checked), optional recency-months input, submit button with pending state.
-
-**Chat — `web/src/components/features/chat/ChatTab.tsx`:**
-- Removed mock assistant-message generation (`handleSend` / `setMessages` / `useState` for input).
-- Composer input and Send button are now permanently disabled with `cursor-not-allowed` styling.
-- Callout added: "AI-powered chat … becomes available once the RAG backend is connected (Phase 9)."
-- Real `initialMessages` from Supabase still render if present.
-
-**Report — `web/src/components/features/report/ReportTab.tsx`:**
-- Removed mock `handleGenerate` and `autoDraft` state.
-- "Generate report" button is permanently disabled.
-- Callout added: "Report generation arrives in Phase 10 when the coordinator agent is connected."
-- Source-selection checkboxes and "Download .md" (for real `existingReport`) remain functional.
-
-**TypeScript:** `npx tsc --noEmit` passes with zero errors.
-
----
-
-## 2026-06-01 — Diagnostics: DB connection address-family logging (IPv6 "Network is unreachable")
-
-Render deploy crashed with `OSError: [Errno 101] Network is unreachable` at the TCP `sock.connect()` stage — a *different* failure from the earlier `_encode_db_url` parsing bugs (the URL now parses fine; the socket connect itself fails). Root cause is the Supabase IPv6 issue: the **direct** connection host `db.<ref>.supabase.co` resolves to **IPv6 only**, and Render has no IPv6 egress. Fix is to use the **Supabase Session pooler** URL (`aws-N-<region>.pooler.supabase.com`, user `postgres.<ref>`, port 5432), which is IPv4-proxied for free.
-
-Verified against the real Render DSN that `_encode_db_url()` correctly percent-encodes the password `,b6?%hT@C6,&wEs` → `%2Cb6%3F%25hT%40C6%2C%26wEs` and round-trips to the exact original. The pooler host + encoded password produce a valid DSN, so the live env var is correct; the failure log seen during debugging was a stale crash (identical nanosecond timestamp). Action: redeploy with **Clear build cache** so a fresh run picks up the pooler URL.
-
-Added startup diagnostics to `worker/worker/db.py`:
-- `_describe_target()` parses **host/port from the DSN without ever touching the password** (`urllib.parse.urlsplit`).
-- `_log_dns()` resolves the host and logs which address families it offers (`IPv4`, `IPv6`, or both); if **IPv6 only**, logs an explicit error naming the pooler fix.
-- `get_pool()` now logs `DB host <host>:<port> resolves to: …` before connecting and `DB pool ready (host:port)` after.
-- Defensive: port `6543` (transaction-mode pooler) → `statement_cache_size=0` (asyncpg prepared statements are incompatible with transaction pooling). Session mode (5432) / direct unaffected.
-
----
-
-## 2026-05-31 — Phase 3: Search Infrastructure
-
-Built the full Phase 3 search package (`worker/worker/search/`) — deterministic plumbing consumed by the Phase 6 worker pipeline. No LLM calls, no DB dependency; all tests are mocked (respx) and run without real network or API keys.
-
-### What was built
-
-**Package structure (`worker/worker/search/`):**
-- `models.py` — Pydantic models: `SearchResult`, `ExtractedContent`, `SearchFailure`, `SearchResponse`, `Tier` literal
-- `errors.py` — Exception hierarchy: `SearchError`, `ProviderUnavailable`, `ExtractionFailed`, `ConfigError`
-- `config.py` — Frozen `SearchConfig` dataclass; `from_env()` reads `config.toml [search]` + env vars
-- `retry.py` — `with_retry()` (tenacity exponential backoff); `make_client()` shared httpx factory
-- `base.py` — ABCs: `WebSearchProvider`, `ContentExtractor`
-- `web/brave.py` — `BraveProvider`: snippets only, tagged per tier
-- `web/tavily.py` — `TavilyProvider`: sets `raw_content` from `include_raw_content=true`
-- `web/factory.py` — `build_web_provider(name, cfg)` — config-driven provider selection
-- `academic/semantic_scholar.py` — `SemanticScholarClient`: keyless Graph API, metadata + abstract + open-access PDF
-- `extraction/trafilatura_extractor.py` — sync trafilatura wrapped via `asyncio.to_thread`
-- `extraction/jina_extractor.py` — async Jina Reader fallback (free tier, optional key)
-- `extraction/chain.py` — `ExtractionChain`: raw_content short-circuit → trafilatura → Jina
-- `router.py` — `SearchRouter`: tier fan-out with `asyncio.gather`, partial-failure collection
-- `__init__.py` — public API: `build_router(cfg)`, all models/errors re-exported
-
-**Config wiring:**
-- `config.toml` — new `[search]` table (web_provider, results_per_query, timeout, retry tuning, extraction settings)
-- `worker/worker/config.py` — added optional `BRAVE_SEARCH_API_KEY`, `TAVILY_API_KEY`, `JINA_API_KEY`
-- `worker/pyproject.toml` — added runtime deps (`httpx>=0.27`, `trafilatura>=1.8`, `tenacity>=8.2`) + test dep (`respx>=0.21`)
-
-**Tests (57 total, all green, no real network):**
-- `tests/test_search_models.py` — contract/validation
-- `tests/test_retry.py` — 500×2→200, 429 retry, 401 fast-fail, all-503 → `ProviderUnavailable`
-- `tests/test_web_providers.py` — Brave/Tavily response parsing, factory, missing-key errors
-- `tests/test_academic.py` — Semantic Scholar parsing, PDF URL, fallback URL
-- `tests/test_extraction.py` — raw_content short-circuit, trafilatura, Jina fallback, both-fail
-- `tests/test_search_router.py` — tier routing, de-duplication, single web call (v1)
-- `tests/test_degradation.py` — partial failures, all-down → `SearchError`
-
-### Key decisions (see decisions.md)
-- Brave + Tavily behind one `WebSearchProvider` interface; `config.toml` selects active provider (default Brave)
-- Provider-aware extraction: raw_content present and long enough → skip trafilatura/Jina entirely
-- Tenacity retry + trafilatura→Jina fallback; no auto Brave↔Tavily failover in v1
-
----
-
-## 2026-06-01 — Fix: `_encode_db_url` sliced passwords containing `?`
-
-The first version of `_encode_db_url()` still crashed Render with `ValueError: bad query field: '%hT@C6,'`. Root cause: it ran `rest.partition("?")` to strip the query string *before* locating the password. Because the Supabase password itself contains a `?`, that split cut the password in half — the trailing half (`…%hT@C6,…@host`) landed in the "query string" bucket, then `rfind("@")` on the truncated front half found no separator and the function bailed out returning the **raw, unencoded** URL. asyncpg then parsed everything after the password's `?` as URL query params and rejected it.
-
-Fix (`worker/worker/config.py`): find the userinfo/host boundary (the **last** `@`) first, then percent-encode the entire password — including any `?` it contains. A genuine `?sslmode=require` query string lives in the host part (after the last `@`) and is left untouched. Verified with three cases: password containing `?%@,`; a plain password; and a password with `?`/`@` alongside a real host query string. No change to Render env vars.
-
----
-
-## 2026-06-01 — Fix: URL-encode DB password in SUPABASE_DB_URL
-
-Render deploy crashed with `ValueError: bad query field: '%hT@C6,'` because the Supabase database password contains URL-special characters (`%`, `@`, `,`) that asyncpg's DSN parser rejected.
-
-Added `_encode_db_url()` helper in `worker/worker/config.py` that percent-encodes the password component of the DSN using `urllib.parse.quote` before the URL is used anywhere. No change required to Render env vars.
-
----
-
-## 2026-05-31 — Config refactor: secrets vs tuning
-
-Separated non-sensitive configuration from secrets.
-
-- Created `config.toml` at repo root — worker tuning (`concurrency`, `poll_interval`, `heartbeat_interval`, `watchdog_interval`, `stale_timeout_seconds`, `grace_shutdown_seconds`) and observability settings (`langchain_tracing`, `langchain_project`) now live here. Safe to commit.
-- Updated `worker/worker/config.py` to read tuning from `config.toml` via stdlib `tomllib`; only `SUPABASE_DB_URL` (and other API keys) remain in `.env`.
-- Stripped tuning vars and `LANGCHAIN_TRACING_V2`/`LANGCHAIN_PROJECT` from `.env` and `.env.example`. `.env` now contains secrets only.
-
----
-
-## 2026-05-31 — Phase 1: Infrastructure & Auth (Supabase-native)
-
-Built the full Phase 1 foundation: Supabase schema/migrations, database-backed job queue worker, real Supabase auth wired into the Next.js 16 shell, shared Pydantic schemas, Render deployment config, and pytest integration test suite.
-
-### Architecture note: FastAPI eliminated
-Phase 1 eliminates FastAPI entirely (recorded in `decisions.md`). The web frontend reads via `@supabase/ssr` server client (RLS-enforced) and writes via Server Actions. The Python worker is the only backend service; job enqueue is a row INSERT or `SECURITY DEFINER` RPC. Two services deploy to Render: `ytres-web` (Next.js) and `ytres-worker` (Python).
-
-### Supabase migrations (`supabase/migrations/`)
-- `0001_extensions.sql` — `vector` (pgvector, 1536-dim) + `pgcrypto`.
-- `0002_core_tables.sql` — enums (`project_status`, `source_tier`, `subtopic_status`, `chat_role`) exactly mirroring `types.ts`; tables: `projects`, `subtopics`, `sources` (unique `project_id,url`), `source_subtopics`, `source_chunks` (`embedding vector(1536)`; ivfflat index deferred to Phase 4), `chat_messages`, `reports`. Realtime publication for these tables declared.
-- `0003_jobs_and_activity.sql` — `job_status` enum + `jobs` table (partial indexes on `status='queued'` and `status='running'`) + `worker_activity` (one row per subtopic, PK). Realtime publication extended.
-- `0004_sharing.sql` — `project_role` enum + `project_members` table. Phase 11 groundwork; no invite UX yet.
-- `0005_rls_policies.sql` — RLS enabled on all app tables; `can_access_project()` and `can_write_project()` SECURITY DEFINER helpers; SELECT/INSERT/UPDATE/DELETE policies for all tables.
-- `0006_rpc.sql` — `claim_job()` (SKIP LOCKED), `heartbeat_job()` (bump + optional checkpoint, returns status), `reclaim_stale_jobs()`, `complete_job()`, `fail_job()` (retry if under max_attempts), `cancel_project_jobs()`.
-
-### Worker scaffold (`worker/`)
-- `worker/config.py` — all tunable constants (`SUPABASE_DB_URL`, concurrency, poll/heartbeat/watchdog intervals) read from env vars; no hard-coding.
-- `worker/db.py` — asyncpg pool (direct connection, RLS bypassed by design).
-- `worker/queue.py` — thin async wrappers around the Postgres queue RPCs.
-- `worker/loop.py` — main claim/dispatch loop; `asyncio.Semaphore(CONCURRENCY)` bounds in-flight jobs; per-job heartbeat coroutine detects cancellation; separate watchdog coroutine reclaims stale jobs; graceful SIGTERM/SIGINT drain.
-- `worker/main.py` — entry point (`python -m worker.main`); signal handlers; worker-id = hostname+uuid.
-- `worker/handlers/echo.py` — Phase 1 proof-of-concept: reads `payload.message`, runs checkpoint steps with sleeps (heartbeats observable), echoes message, completes. No LLM calls.
-
-### Web: real Supabase auth (`web/`)
-- Installed: `@supabase/ssr`, `@supabase/supabase-js`, `server-only`.
-- `web/src/lib/supabase/client.ts` — `createBrowserClient` for Client Components.
-- `web/src/lib/supabase/server.ts` — `createServerClient` with async `cookies()` adapter (`server-only`).
-- `web/src/lib/supabase/admin.ts` — service-role client (`server-only`, `SUPABASE_SERVICE_ROLE_KEY`).
-- `web/src/lib/supabase/proxy-session.ts` — session refresh helper for proxy.ts context.
-- `web/proxy.ts` — Next.js 16 `proxy()` export: refreshes session, redirects unauthenticated users away from `(app)` routes, redirects authenticated users away from auth routes.
-- `web/src/app/(auth)/actions.ts` — `"use server"` `login` / `signup` / `signOut` Server Actions; return `{error}` for `useActionState`, `redirect()` on success.
-- `web/src/lib/data/dal.ts` — `getCurrentUser()` (server client + React `cache()`).
-- Modified `LoginForm.tsx` / `SignupForm.tsx` — replaced mocked `router.push` with `useActionState` + `<form action={action}>` + error display.
-- Modified `TopNav.tsx` — accepts `user` and `signOut` props; signed-in cluster shows email + sign-out form action; signed-out cluster shows sign-in/get-started links.
-- Modified `(app)/layout.tsx` — async; calls `getCurrentUser()` + passes user + `signOut` Server Action to TopNav.
-
-### Shared contracts (`shared/`)
-- `shared/schemas/job_payloads.py` — `EchoPayload`, `WorkerActivityRow` Pydantic models; `JOB_PAYLOAD_MODELS` registry.
-
-### Deployment config
-- `render.yaml` — two services: `ytres-web` (Next.js Web Service) and `ytres-worker` (Python Background Worker). No `api` service.
-- `.env.example` — documents every variable with usage notes (`NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_DB_URL`, worker tuning constants, future phase vars).
-- `worker/pyproject.toml` — hatchling build, asyncpg/pydantic/python-dotenv deps, pytest-asyncio test config.
-
-### Tests (`worker/tests/`)
-- `test_queue.py` — integration tests against real Postgres (SKIP LOCKED correctness, claim/heartbeat/reclaim/cancellation/idempotent-resume scenarios).
-- `test_contract.py` — Pydantic schema contract tests for `EchoPayload` and `WorkerActivityRow`.
-
-**`npm run build`** — clean, zero TypeScript errors.
-
----
-
-## 2026-05-31 — Architecture: eliminate FastAPI (Supabase-native) + Phase 1 plan rewrite
-
-Decided to **drop the FastAPI backend** before any of it was built. The web (Next.js) now talks to Supabase directly — reads via the `@supabase/ssr` server client (RLS), writes/CRUD/enqueue via Server Actions (RLS + `SECURITY DEFINER` RPCs) — and the **Python worker is the only backend service** (and the agent orchestrator). Rationale: FastAPI was a thin auth/CRUD/enqueue shim that never orchestrated agents; removing it loses no capability, aligns the read shape with the Phase 7 Realtime shape, and exercises RLS as a real control. RAG chat will run as a job; a sync endpoint is deferred to Phase 9.
-
-- **`decisions.md`** — added the dated decision (eliminate FastAPI / Supabase-native), incl. state-machine-in-Postgres and reads-RLS / writes-Server-Actions.
-- **`PRD.md`** — Tech Stack: replaced the "Backend API: FastAPI" bullet with the Supabase-native frontend/data bullet; worker is the only backend service; hosting drops the API Web Service; two-plane execution trigger is now a Server Action; Phase 1 module drops "FastAPI scaffold"; auth test module updated (`proxy.ts` + RLS).
-- **`deferredwork.md`** — env vars: split public `NEXT_PUBLIC_*`, `SUPABASE_SERVICE_ROLE_KEY` now used by Next.js server-side, added `SUPABASE_DB_URL` (worker asyncpg); Render row drops the API service.
-- **`agent/phase-1-plan.md`** — rewritten FastAPI-free (removed the `api/` scaffold, JWT verifier, `/me`, FastAPI auth tests, `SUPABASE_JWT_SECRET`/`CORS_ALLOW_ORIGINS`); kept schema, RLS, queue + RPCs, worker scaffold, and Supabase auth wiring; added a server-only service-role client for Next.js.
-
-No application code changed yet — docs + Phase 1 plan only.
-
----
-
-## 2026-05-29 — Major Feature #1: Dark Mode
-
-Added a site-wide dark mode toggle. Implemented via **CSS-variable remapping**, not `dark:` utility sprinkling — because every component already uses semantic token utilities (`bg-canvas`, `text-ink`, `border-hairline`) that compile to `var(--color-*)`, overriding those variable values under a `.dark` selector flips the whole app with essentially zero component edits.
-
-**Dependency:** `next-themes` (class strategy → toggles `.dark` on `<html>`; handles SSR no-flash + system-preference + localStorage persistence).
-
-**`globals.css`:**
-- Registered Tailwind v4 `@custom-variant dark (&:where(.dark, .dark *))` for any targeted `dark:` overrides.
-- Added a `.dark { … }` block remapping the **role** tokens to a warm-dark palette (warm near-blacks, never cool slate — brand stays warm per DESIGN.md). Elevation hierarchy preserved: `canvas` (darkest floor) → `surface-soft` → `surface-card`. Text inverts dark→light. Coral `primary`/`primary-active` lifted slightly for legibility on dark.
-- **Not** remapped (kept literal): semantic accents (success/warning/error/teal/amber), `on-primary`, and the always-dark surfaces (`surface-dark*`, `on-dark*`) used by the Footer, code blocks, and dark product cards.
-
-**New components:**
-- `src/components/theme/ThemeProvider.tsx` — `"use client"` next-themes wrapper (`attribute="class"`, `defaultTheme="system"`, `enableSystem`, `disableTransitionOnChange`).
-- `src/components/theme/ThemeToggle.tsx` — `"use client"` circular sun/moon icon button styled per DESIGN.md `button-icon-circular` (36px, canvas bg, hairline border, ink icon). `mounted` guard prevents hydration mismatch; aria-label reflects target mode.
-
-**Wiring:**
-- `app/layout.tsx` — added `suppressHydrationWarning` on `<html>` (required by next-themes) and wrapped `{children}` in `<ThemeProvider>`.
-- `TopNav.tsx` — `<ThemeToggle />` added to the desktop right cluster and the mobile menu header. Fixed the Radix Dialog overlay scrim (`bg-ink/40` → `bg-[#141413]/50`) so it stays a dark scrim in both modes (`ink` flips to light in dark mode).
-
-**`npm run build`** — clean, zero TS errors.
-
----
-
-## 2026-05-29 — Phase 0: Navigable Frontend Shell
-
-Built the complete Phase 0 frontend shell into `ytres/web/` (Next.js 16 App Router, TypeScript strict, Tailwind v4, src/ dir).
-
-**Tooling & setup:**
-- Next.js 16.2.6 (Turbopack), React 19, TypeScript strict, Tailwind v4 CSS-first `@theme`
-- Fonts: Cormorant Garamond (display serif), Inter (humanist sans), JetBrains Mono — wired via `next/font/google` CSS variables
-- Deps: `@radix-ui/react-tabs`, `@radix-ui/react-dialog` (mobile nav), `class-variance-authority`, `tailwind-merge`, `clsx`, `react-markdown`
-- `npm run build` — clean, zero TS errors. Zero inline hex in components (design-token guardrail).
-
-**Design tokens (`globals.css` `@theme`):**
-- All DESIGN.md colors, border-radius, spacing, and font families mapped to CSS custom properties
-- Typography composite utility classes: `.text-display-xl/lg/md/sm`, `.text-title-lg/md/sm`, `.text-body-md/sm`, `.text-caption`, `.text-caption-uppercase`, `.text-button`, `.text-nav-link`
-
-**Data layer (`src/lib/data/`):**
-- `types.ts` — domain types mirroring the PRD data model (verbatim-reusable by real client)
-- `fixtures.ts` — 5 projects (one of each status), subtopics, sources (incl. low-quality score set), worker activity, full chat thread with citations, complete markdown report
-- `client.ts` — async data-access fns (getProjects, getProject, getSubtopics, getSources, getWorkerActivity, getChatMessages, getReport) — the swappable mock→real seam
-
-**Components:**
-- `src/components/ui/` — Button (5 variants, cva), TextLink, Card/Surface, Input/Textarea, Badge, StatusPill, ScorePill/ScoreBar, Callout, SpikeMark
-- `src/components/layout/` — TopNav (64px, mobile hamburger via Radix Dialog), Footer (dark navy), AuthShell, ProjectShellHeader, ProjectTabNav (usePathname active state), PageContainer
-- `src/components/features/` — auth (LoginForm, SignupForm), dashboard (DashboardView, ProjectCard, EmptyState), plan (PlanTab), research (ResearchTab), sources (SourcesTab, SourceCard), chat (ChatTab, ChatMessage), report (ReportTab, SourceSelector, ReportPreview)
-
-**Routes (all verified in build):**
-- `/` → redirect to `/dashboard`
-- `/login`, `/signup` — auth shell forms
-- `/dashboard` — ProjectList grid
-- `/project/[id]` → redirect to `/plan`
-- `/project/[id]/{plan,research,sources,chat,report}` — all tabs, mocked data
-
-**Persistent shell confirmed:** `(app)/project/[id]/layout.tsx` renders ProjectShellHeader + ProjectTabNav + `{children}` — only `page.tsx` swaps on tab navigation. This is the Phase 7 Realtime seam.
-
----
-
-## 2026-05-29 — Verified DeepSeek V4 models; corrected context-window framing
-
-- Confirmed via web search that `deepseek-v4-pro` and `deepseek-v4-flash` are real, current model IDs (both 1M-token context, three reasoning-effort modes). Legacy `deepseek-chat`/`deepseek-reasoner` aliases deprecated 2026-07-24.
-- Updated `PRD.md`: exact model IDs in Tech Stack + Further Notes; reframed the 100K-token ceiling as a **self-imposed cost/quality guardrail** (tunable constant), not a model limit.
-- Resolved the DeepSeek open question in `deferredwork.md`.
-
-## 2026-05-29 — PRD v2 rewrite + architecture decisions captured
-
-- Rewrote `context/PRD.md` as v2 for the fresh attempt. Key changes:
-  - Replaced Celery + Redis async model with a **database-backed job queue** (Postgres `FOR UPDATE SKIP LOCKED` + `asyncio` concurrency, worker heartbeats, self-healing watchdog).
-  - Added the **two-plane (execution / projection)** core principle to fix v1 agent orphaning; added user story #31 (research survives tab close).
-  - Made **Supabase Realtime** the sole UI sync mechanism; removed the SSE/Redis contradiction.
-  - Committed hosting to **Render** (frontend + API as Web Services, worker as Background Worker) with managed Supabase.
-  - Added a **Phase 0: Navigable Frontend Shell** to the module order for QA-from-day-one; renumbered subsequent phases and moved the worker/queue scaffold into Phase 1.
-  - Added an explicit **LLM vs. non-LLM task split** table.
-  - Added `jobs` and `worker_activity` tables to the data model; added a `queue` test module.
-- Created `context/decisions.md` with five dated decisions (job queue, two-plane, Realtime, Render, Phase 0).
-- Created `context/deferredwork.md` capturing required API keys / env vars (DeepSeek, OpenAI embeddings, Brave/Tavily, Jina, Supabase, LangSmith, Render).
-- No application code yet — repo still contains only `context/` docs and `CLAUDE.md`.
+## PRD v2 + architecture decisions (2026-05-29)
+Replaced Celery/Redis with DB-backed job queue. Two-plane (execution/projection) principle. Supabase Realtime as sole UI sync. Render hosting. Added Phase 0. Eliminated FastAPI (Supabase-native reads+Server Actions). All decisions captured in `decisions.md`.
