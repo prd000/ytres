@@ -4,6 +4,14 @@ A running record of everything built/changed. Newest first.
 
 ---
 
+## 2026-06-01 — Fix: URL-encode DB password in SUPABASE_DB_URL
+
+Render deploy crashed with `ValueError: bad query field: '%hT@C6,'` because the Supabase database password contains URL-special characters (`%`, `@`, `,`) that asyncpg's DSN parser rejected.
+
+Added `_encode_db_url()` helper in `worker/worker/config.py` that percent-encodes the password component of the DSN using `urllib.parse.quote` before the URL is used anywhere. No change required to Render env vars.
+
+---
+
 ## 2026-05-31 — Config refactor: secrets vs tuning
 
 Separated non-sensitive configuration from secrets.

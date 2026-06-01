@@ -4,6 +4,33 @@ Worker configuration — secrets from env (.env), tuning from config.toml.
 import os
 import tomllib
 from pathlib import Path
+from urllib.parse import quote
+
+
+def _encode_db_url(raw: str) -> str:
+    """Percent-encode the password in a postgres DSN.
+
+    Supabase passwords can contain chars like %, @, comma that break asyncpg's
+    URL parser unless they are properly escaped.
+    """
+    if "://" not in raw:
+        return raw
+    scheme, rest = raw.split("://", 1)
+    # Strip query string
+    rest, _, qs = rest.partition("?")
+    at = rest.rfind("@")
+    if at == -1:
+        return raw
+    userinfo, hostpart = rest[:at], rest[at + 1:]
+    colon = userinfo.find(":")
+    if colon == -1:
+        return raw
+    user, password = userinfo[:colon], userinfo[colon + 1:]
+    encoded = quote(password, safe="")
+    result = f"{scheme}://{user}:{encoded}@{hostpart}"
+    if qs:
+        result += f"?{qs}"
+    return result
 
 # ── Config file (repo root) ───────────────────────────────────────────────────
 _cfg_path = Path(__file__).parent.parent.parent / "config.toml"
@@ -15,7 +42,7 @@ _obs = _cfg.get("observability", {})
 
 # ── Database ──────────────────────────────────────────────────────────────────
 # Direct asyncpg connection string (bypasses RLS by design — trusted server).
-SUPABASE_DB_URL: str = os.environ["SUPABASE_DB_URL"]
+SUPABASE_DB_URL: str = _encode_db_url(os.environ["SUPABASE_DB_URL"])
 
 # ── Concurrency & polling ─────────────────────────────────────────────────────
 WORKER_CONCURRENCY: int   = _w["concurrency"]
