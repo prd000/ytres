@@ -27,6 +27,7 @@ A map of the project codebase — one line per file with its purpose. Update whe
 |---|---|
 | `phase-0-plan.md` | Phase 0 implementation plan — detailed spec for the navigable frontend shell (complete) |
 | `phase-1-plan.md` | Phase 1 implementation plan (Supabase-native, FastAPI-free) — schema/RLS, job queue + RPCs, worker scaffold, Supabase auth wiring (complete) |
+| `phase-3-plan.md` | Phase 3 implementation plan — search infrastructure: web providers, Semantic Scholar, extraction chain, router (complete) |
 
 ---
 
@@ -60,17 +61,46 @@ A map of the project codebase — one line per file with its purpose. Update whe
 | `handlers/__init__.py` | `HANDLERS` registry mapping job type strings to handler coroutines |
 | `handlers/echo.py` | Phase 1 proof-of-concept handler: checkpoints through steps, echoes payload.message, completes |
 
-### `worker/tests/` — pytest integration tests
+### `worker/worker/search/` — Phase 3 search infrastructure
+
+| File | Purpose |
+|---|---|
+| `__init__.py` | Public surface: `build_router(cfg)`, `SearchRouter`, all models/errors re-exported |
+| `models.py` | Pydantic models: `SearchResult`, `ExtractedContent`, `SearchFailure`, `SearchResponse`, `Tier` literal |
+| `errors.py` | Exception hierarchy: `SearchError`, `ProviderUnavailable`, `ExtractionFailed`, `ConfigError` |
+| `config.py` | Frozen `SearchConfig` dataclass; `from_env()` reads `config.toml [search]` + env (no DB dep) |
+| `retry.py` | `with_retry()` tenacity exponential-backoff policy; `make_client()` shared httpx factory |
+| `base.py` | ABCs: `WebSearchProvider`, `ContentExtractor` |
+| `web/__init__.py` | Package marker |
+| `web/brave.py` | `BraveProvider` — snippets only, tier-tagged |
+| `web/tavily.py` | `TavilyProvider` — sets `raw_content` from `include_raw_content=true` |
+| `web/factory.py` | `build_web_provider(name, cfg)` — config-driven provider select; raises `ConfigError` on unknown/missing-key |
+| `academic/__init__.py` | Package marker |
+| `academic/semantic_scholar.py` | `SemanticScholarClient` — keyless Graph API; metadata + abstract + open-access PDF URL |
+| `extraction/__init__.py` | Package marker |
+| `extraction/trafilatura_extractor.py` | `TrafilaturaExtractor` — sync trafilatura wrapped via `asyncio.to_thread` |
+| `extraction/jina_extractor.py` | `JinaExtractor` — async Jina Reader fallback (`https://r.jina.ai/{url}`) |
+| `extraction/chain.py` | `ExtractionChain` — raw_content short-circuit → trafilatura → Jina; raises `ExtractionFailed` |
+| `router.py` | `SearchRouter` — tier fan-out with `asyncio.gather`; partial-failure collection; all-down → `SearchError` |
+
+### `worker/tests/` — pytest tests
 
 | File | Purpose |
 |---|---|
 | `conftest.py` | asyncpg pool fixture + seed helpers (_seed_user, _seed_project, _seed_subtopic, _enqueue_job) |
 | `test_queue.py` | Integration tests: SKIP LOCKED correctness, claim/heartbeat/reclaim/cancel/idempotent-resume scenarios against real Postgres |
 | `test_contract.py` | Pydantic contract tests for EchoPayload and WorkerActivityRow schemas |
+| `test_search_models.py` | Phase 3 contract/validation tests for search models |
+| `test_retry.py` | Retry policy: 500×2→200, 429 retry, 401 fast-fail, all-503 → ProviderUnavailable (respx mocked) |
+| `test_web_providers.py` | Brave/Tavily parsing, factory, missing-key errors (respx mocked) |
+| `test_academic.py` | Semantic Scholar parsing, PDF URL, fallback URL (respx mocked) |
+| `test_extraction.py` | raw_content short-circuit, trafilatura (monkeypatched), Jina (respx), fallback chain |
+| `test_search_router.py` | Tier routing, de-duplication, single web call (v1), provider tagging |
+| `test_degradation.py` | Partial failures (one backend down), all-down → SearchError |
 
 | Root file | Purpose |
 |---|---|
-| `pyproject.toml` | Package config: asyncpg/pydantic/python-dotenv deps; pytest-asyncio test config |
+| `pyproject.toml` | Package config: asyncpg/pydantic/python-dotenv/httpx/trafilatura/tenacity deps; respx test dep |
 
 ---
 

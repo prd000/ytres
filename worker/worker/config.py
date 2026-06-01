@@ -16,21 +16,23 @@ def _encode_db_url(raw: str) -> str:
     if "://" not in raw:
         return raw
     scheme, rest = raw.split("://", 1)
-    # Strip query string
-    rest, _, qs = rest.partition("?")
+    # The userinfo/host boundary is the LAST "@" — the host never contains "@",
+    # but the password may (along with "?", "%", "," etc.). Splitting on "?" or
+    # the first "@" before this point would slice the password in half.
     at = rest.rfind("@")
     if at == -1:
         return raw
     userinfo, hostpart = rest[:at], rest[at + 1:]
+    # The user never contains ":" (Supabase users are "postgres" / "postgres.ref"),
+    # so the first ":" splits user from password; the password keeps the rest.
     colon = userinfo.find(":")
     if colon == -1:
         return raw
     user, password = userinfo[:colon], userinfo[colon + 1:]
+    # Encode every reserved char in the password, including any "?". The host part
+    # (and any real "?sslmode=..." query string) is already valid, so leave it as-is.
     encoded = quote(password, safe="")
-    result = f"{scheme}://{user}:{encoded}@{hostpart}"
-    if qs:
-        result += f"?{qs}"
-    return result
+    return f"{scheme}://{user}:{encoded}@{hostpart}"
 
 # ── Config file (repo root) ───────────────────────────────────────────────────
 _cfg_path = Path(__file__).parent.parent.parent / "config.toml"
@@ -59,6 +61,12 @@ STALE_TIMEOUT_SECONDS: int = _w["stale_timeout_seconds"]
 # On SIGTERM/SIGINT the loop stops claiming and waits up to this many seconds
 # for in-flight jobs to finish before the process exits.
 GRACE_SHUTDOWN_SECONDS: float = _w["grace_shutdown_seconds"]
+
+# ── Search provider keys (optional — keyless Semantic Scholar + trafilatura path
+# works without them; keys are only required to use Brave/Tavily/Jina) ─────────
+BRAVE_SEARCH_API_KEY: str | None = os.environ.get("BRAVE_SEARCH_API_KEY")
+TAVILY_API_KEY:       str | None = os.environ.get("TAVILY_API_KEY")
+JINA_API_KEY:         str | None = os.environ.get("JINA_API_KEY")
 
 # ── Observability — set as env vars so LangChain SDK picks them up automatically
 os.environ.setdefault("LANGCHAIN_TRACING_V2", str(_obs.get("langchain_tracing", False)).lower())

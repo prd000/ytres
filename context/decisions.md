@@ -4,6 +4,21 @@ This file tracks architectural decisions and any deviations from the original PR
 
 ---
 
+## 2026-05-31 — Phase 3 search infrastructure decisions
+
+**Decision 1 — Swappable web provider (default Brave).**
+Implement Brave + Tavily behind a single `WebSearchProvider` ABC. `config.toml [search] web_provider` selects the active one; callers never reference a specific provider. `build_web_provider(name, cfg)` in `web/factory.py` is the only place the name is resolved. This means the active provider can be changed with a config edit, no code change required.
+
+**Decision 2 — Provider-aware extraction (raw_content short-circuit).**
+When a `SearchResult.raw_content` is present and its word count meets `extraction_min_words`, `ExtractionChain` returns `ExtractedContent(extractor="provider")` immediately — no network call. Only when raw content is absent or too short does the chain fall through to trafilatura → Jina. This is Tavily-specific behavior today but is transparent to the router.
+
+**Decision 3 — Tenacity retry + trafilatura→Jina fallback; no auto provider-switch in v1.**
+`with_retry()` in `retry.py` uses tenacity `AsyncRetrying` for exponential-backoff on transient HTTP errors (TransportError + 429/5xx). 4xx (excluding 429) fail fast without retry. On exhaustion, `ProviderUnavailable` is raised. A `web_fallback_provider` config key exists in `config.toml` but is disabled (`""`) in v1 — automatic Brave↔Tavily failover is deferred.
+
+**Why:** Keeps the retry contract simple and observable: one provider per call. Failover introduces complexity around result de-duplication and quota tracking that isn't justified at current scale.
+
+---
+
 ## 2026-05-31 — Eliminate FastAPI; go Supabase-native
 
 **Decision:** Drop the planned FastAPI backend entirely. The web app (Next.js) talks to Supabase directly — **reads** via the `@supabase/ssr` server client (RLS-enforced), **writes / CRUD / status-machine / job-enqueue** via Next.js **Server Actions** (RLS + `SECURITY DEFINER` RPCs). The **Python worker remains the only backend service** and is the agent orchestrator (`FOR UPDATE SKIP LOCKED` + `asyncio` + semaphore). Postgres is the single source of truth and RLS is the single isolation layer.

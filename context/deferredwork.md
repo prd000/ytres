@@ -13,7 +13,7 @@ These are required before the corresponding phase can run for real. None are wir
 | `SUPABASE_DB_URL` | Supabase | Phase 1 | **New.** Direct Postgres connection string for the worker's `asyncpg` pool. |
 | `DEEPSEEK_API_KEY` | DeepSeek (coordinator/workers/classification) | Phase 5 | Used via LangChain's OpenAI-compatible interface. Model IDs confirmed: `deepseek-v4-pro` (reasoning) and `deepseek-v4-flash` (classification), both 1M-token context. Avoid the deprecated `deepseek-chat`/`deepseek-reasoner` aliases (EOL 2026-07-24). |
 | `OPENAI_API_KEY` | OpenAI `text-embedding-3-small` | Phase 4 | Embeddings only. |
-| `BRAVE_API_KEY` *or* `TAVILY_API_KEY` | Brave Search or Tavily | Phase 3 | Pick one web-search provider. Semantic Scholar needs no key. |
+| `BRAVE_SEARCH_API_KEY` *or* `TAVILY_API_KEY` | Brave Search or Tavily | Phase 3 | Pick one web-search provider. The correct env var name is **`BRAVE_SEARCH_API_KEY`** (not `BRAVE_API_KEY`). Semantic Scholar needs no key. |
 | `JINA_API_KEY` | Jina Reader API | Phase 3 | Fallback content extractor; free tier. trafilatura (primary) needs no key. |
 | `LANGSMITH_API_KEY` (+ `LANGCHAIN_TRACING_V2=true`, `LANGCHAIN_PROJECT`) | LangSmith | Phase 5 | Tracing on every LLM call. |
 | Render account + service config | Render | Phase 1 (deploy) | Frontend as a Web Service, worker as a Background Worker. **No API service** (FastAPI eliminated — see `decisions.md`). |
@@ -54,6 +54,20 @@ Before Phase 1 can run end-to-end, the user must:
 3. **Enable the Realtime publication** on the tables listed in `0002_core_tables.sql` and `0003_jobs_and_activity.sql` (the `alter publication supabase_realtime add table …` statements run as part of the migrations, but must be enabled in the Supabase dashboard's Realtime settings if not done automatically).
 4. **Create Render services**: one Web Service pointing at `web/` and one Background Worker pointing at `worker/`. Set env vars from `.env.example`.
 5. **Run `npm install`** if you see missing-module errors for `@supabase/ssr`, `@supabase/supabase-js`, or `server-only` (these were installed during Phase 1 development but are captured in `package.json`).
+
+## Phase 3 user actions required (added 2026-05-31)
+
+Search keys are now read by `worker/worker/config.py` but are all optional — the keyless Semantic Scholar + trafilatura path works without any of them. To use Brave or Tavily, set the correct key in `worker/.env` and in Render's env vars:
+
+- `BRAVE_SEARCH_API_KEY` (not `BRAVE_API_KEY`) for Brave Search
+- `TAVILY_API_KEY` for Tavily
+- `JINA_API_KEY` for Jina Reader (fallback extractor; free tier)
+
+Set `web_provider = "brave"` or `"tavily"` in `config.toml [search]` to choose the active provider.
+
+## Pre-Phase-6 action required: `SUPABASE_DB_URL` percent-encoding
+
+The `_encode_db_url()` fix in `worker/worker/config.py` handles the encoding at import time. Before Phase 6 wiring, verify the worker boots cleanly against the real Supabase DB URL by running it locally: `python -m worker.main`. If the URL still breaks asyncpg, manually percent-encode special chars in the password: `@`→`%40`, `?`→`%3F`, `%`→`%25`, `&`→`%26`, `,`→`%2C`.
 
 ## Open questions to resolve
 

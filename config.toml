@@ -12,3 +12,16 @@ grace_shutdown_seconds = 30.0 # time allowed for in-flight jobs to finish on SIG
 [observability]
 langchain_tracing = true
 langchain_project = "ytres"
+
+# ── Search ─────────────────────────────────────────────────────────────────────
+# Safe to commit — no secrets. Set provider API keys in .env / Render env vars.
+[search]
+web_provider          = "brave"   # "brave" | "tavily"  (swappable)
+web_fallback_provider = ""        # "" = disabled (no auto-switch in v1)
+results_per_query     = 10
+timeout               = 20.0
+max_retries           = 4
+backoff_base          = 0.5
+backoff_max           = 30.0
+extraction_timeout    = 30.0
+extraction_min_words  = 50        # raw_content/extraction below this → fall through to next extractor

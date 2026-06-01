@@ -4,6 +4,57 @@ A running record of everything built/changed. Newest first.
 
 ---
 
+## 2026-05-31 — Phase 3: Search Infrastructure
+
+Built the full Phase 3 search package (`worker/worker/search/`) — deterministic plumbing consumed by the Phase 6 worker pipeline. No LLM calls, no DB dependency; all tests are mocked (respx) and run without real network or API keys.
+
+### What was built
+
+**Package structure (`worker/worker/search/`):**
+- `models.py` — Pydantic models: `SearchResult`, `ExtractedContent`, `SearchFailure`, `SearchResponse`, `Tier` literal
+- `errors.py` — Exception hierarchy: `SearchError`, `ProviderUnavailable`, `ExtractionFailed`, `ConfigError`
+- `config.py` — Frozen `SearchConfig` dataclass; `from_env()` reads `config.toml [search]` + env vars
+- `retry.py` — `with_retry()` (tenacity exponential backoff); `make_client()` shared httpx factory
+- `base.py` — ABCs: `WebSearchProvider`, `ContentExtractor`
+- `web/brave.py` — `BraveProvider`: snippets only, tagged per tier
+- `web/tavily.py` — `TavilyProvider`: sets `raw_content` from `include_raw_content=true`
+- `web/factory.py` — `build_web_provider(name, cfg)` — config-driven provider selection
+- `academic/semantic_scholar.py` — `SemanticScholarClient`: keyless Graph API, metadata + abstract + open-access PDF
+- `extraction/trafilatura_extractor.py` — sync trafilatura wrapped via `asyncio.to_thread`
+- `extraction/jina_extractor.py` — async Jina Reader fallback (free tier, optional key)
+- `extraction/chain.py` — `ExtractionChain`: raw_content short-circuit → trafilatura → Jina
+- `router.py` — `SearchRouter`: tier fan-out with `asyncio.gather`, partial-failure collection
+- `__init__.py` — public API: `build_router(cfg)`, all models/errors re-exported
+
+**Config wiring:**
+- `config.toml` — new `[search]` table (web_provider, results_per_query, timeout, retry tuning, extraction settings)
+- `worker/worker/config.py` — added optional `BRAVE_SEARCH_API_KEY`, `TAVILY_API_KEY`, `JINA_API_KEY`
+- `worker/pyproject.toml` — added runtime deps (`httpx>=0.27`, `trafilatura>=1.8`, `tenacity>=8.2`) + test dep (`respx>=0.21`)
+
+**Tests (57 total, all green, no real network):**
+- `tests/test_search_models.py` — contract/validation
+- `tests/test_retry.py` — 500×2→200, 429 retry, 401 fast-fail, all-503 → `ProviderUnavailable`
+- `tests/test_web_providers.py` — Brave/Tavily response parsing, factory, missing-key errors
+- `tests/test_academic.py` — Semantic Scholar parsing, PDF URL, fallback URL
+- `tests/test_extraction.py` — raw_content short-circuit, trafilatura, Jina fallback, both-fail
+- `tests/test_search_router.py` — tier routing, de-duplication, single web call (v1)
+- `tests/test_degradation.py` — partial failures, all-down → `SearchError`
+
+### Key decisions (see decisions.md)
+- Brave + Tavily behind one `WebSearchProvider` interface; `config.toml` selects active provider (default Brave)
+- Provider-aware extraction: raw_content present and long enough → skip trafilatura/Jina entirely
+- Tenacity retry + trafilatura→Jina fallback; no auto Brave↔Tavily failover in v1
+
+---
+
+## 2026-06-01 — Fix: `_encode_db_url` sliced passwords containing `?`
+
+The first version of `_encode_db_url()` still crashed Render with `ValueError: bad query field: '%hT@C6,'`. Root cause: it ran `rest.partition("?")` to strip the query string *before* locating the password. Because the Supabase password itself contains a `?`, that split cut the password in half — the trailing half (`…%hT@C6,…@host`) landed in the "query string" bucket, then `rfind("@")` on the truncated front half found no separator and the function bailed out returning the **raw, unencoded** URL. asyncpg then parsed everything after the password's `?` as URL query params and rejected it.
+
+Fix (`worker/worker/config.py`): find the userinfo/host boundary (the **last** `@`) first, then percent-encode the entire password — including any `?` it contains. A genuine `?sslmode=require` query string lives in the host part (after the last `@`) and is left untouched. Verified with three cases: password containing `?%@,`; a plain password; and a password with `?`/`@` alongside a real host query string. No change to Render env vars.
+
+---
+
 ## 2026-06-01 — Fix: URL-encode DB password in SUPABASE_DB_URL
 
 Render deploy crashed with `ValueError: bad query field: '%hT@C6,'` because the Supabase database password contains URL-special characters (`%`, `@`, `,`) that asyncpg's DSN parser rejected.
