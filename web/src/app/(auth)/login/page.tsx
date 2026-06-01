@@ -1,13 +1,19 @@
 import { AuthShell } from "@/components/layout/AuthShell";
 import { LoginForm } from "@/components/features/auth/LoginForm";
 
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
+
   return (
     <AuthShell
       title="Welcome back"
       subtitle="Sign in to your research workspace"
     >
-      <LoginForm />
+      <LoginForm initialError={error} />
     </AuthShell>
   );
 }

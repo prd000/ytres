@@ -5,11 +5,15 @@ import Link from "next/link";
 import { Input } from "@/components/ui/Input";
 import { login, type AuthState } from "@/app/(auth)/actions";
 
-export function LoginForm() {
+export function LoginForm({ initialError }: { initialError?: string }) {
   const [state, action, pending] = useActionState<AuthState, FormData>(
     login,
     undefined
   );
+
+  // A failed/expired email-confirmation link redirects here with ?error=…;
+  // show it until the user submits, after which the action's own error wins.
+  const error = state?.error ?? initialError;
 
   return (
     <form action={action} className="flex flex-col gap-5">
@@ -36,8 +40,8 @@ export function LoginForm() {
         />
       </div>
 
-      {state?.error && (
-        <p className="text-sm text-error" role="alert">{state.error}</p>
+      {error && (
+        <p className="text-sm text-error" role="alert">{error}</p>
       )}
 
       <button

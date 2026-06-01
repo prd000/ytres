@@ -2,6 +2,18 @@
 
 Things to be implemented later, deferred in favor of a working prototype, or that require the user to supply something (API keys, accounts, secrets). Alert the user whenever an item is added here.
 
+## Manual Supabase dashboard config (user must do — code is ready, these make it take effect)
+
+Added 2026-06-01 alongside the `/auth/confirm` server-side email-confirmation handler. The route + `emailRedirectTo` wiring are in code, but Supabase's hosted-project settings (which `supabase/config.toml` does **not** control — that file only governs the local CLI stack) must be set in the dashboard:
+
+1. **Authentication → URL Configuration → Site URL** → set to the Render URL (e.g. `https://<app>.onrender.com`). This is what made confirmation links point at `localhost:3000`.
+2. **Authentication → URL Configuration → Redirect URLs** → add `https://<app>.onrender.com/**` and `http://localhost:3000/**` (so dev still works). `emailRedirectTo` must match an allow-listed pattern.
+3. **Authentication → Emails → "Confirm signup" template** → change the link to the token-hash form so our handler is hit and the session is set server-side:
+   ```html
+   <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next=/dashboard">Confirm your email</a>
+   ```
+   (Default template uses `{{ .ConfirmationURL }}`, which routes through Supabase's implicit-flow verify endpoint and does **not** establish the cookie-based server session.)
+
 ## API Keys / Environment Variables needed (user must provide)
 
 These are required before the corresponding phase can run for real. None are wired yet (Phase 0 is mocked data only).

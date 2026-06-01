@@ -4,6 +4,17 @@ A running record of everything built/changed. Newest first.
 
 ---
 
+## 2026-06-01 — Server-side email confirmation (`/auth/confirm` route + `emailRedirectTo`)
+
+- **Problem:** Supabase confirmation emails linked to `localhost:3000` (the hosted project's default Site URL) and, even with the right host, the default implicit flow only sets a client-side token — it never establishes the cookie-based **server** session that `@supabase/ssr` + `proxy.ts` rely on. So confirmed users weren't reliably logged in server-side.
+- **New** `web/src/app/auth/confirm/route.ts` — `GET` handler that reads `token_hash` + `type` from the email link and calls `supabase.auth.verifyOtp(...)`. Verifying through the SSR server client writes the session cookie (route handlers can mutate cookies), leaving the user authenticated on the server. Builds the post-confirm absolute redirect from `x-forwarded-host`/`x-forwarded-proto` (Render terminates TLS upstream), falls back to `request.nextUrl.origin`. `next` param is path-allow-listed (must start with `/`, not `//`) to avoid open-redirect; default `/dashboard`. On failure redirects to `/login?error=…`.
+- **`web/src/app/(auth)/actions.ts`** — `signup` now sets `options.emailRedirectTo = ${origin}/auth/confirm`, deriving `origin` from the request `headers()` so the link returns to whatever host the user signed up on (localhost in dev, Render in prod).
+- **`web/src/app/(auth)/login/page.tsx`** — now an `async` server component that awaits `searchParams` (Promise in Next 16) and passes `error` to the form.
+- **`web/src/components/features/auth/LoginForm.tsx`** — accepts `initialError?`; shows `?error=` from a failed/expired confirmation link until the user submits, after which the action's own error takes over.
+- The proxy matcher leaves `/auth/confirm` untouched (it matches neither `APP_PATTERN` nor `AUTH_PATTERN`), so the handler runs and its `verifyOtp` cookie persists for the follow-up `/dashboard` request.
+- **Verified:** `npx tsc --noEmit` clean.
+- **Requires two manual Supabase dashboard steps to take effect** — see `deferredwork.md` (Site URL + Redirect URLs, and the "Confirm signup" email template must point at `{{ .SiteURL }}/auth/confirm?...`).
+
 ## 2026-06-01 — Bug #1 follow-up: semantic layout-width tokens (replaces the arbitrary-value hotfix)
 
 - Adopted the DESIGN.md-faithful fix for the token collision (see `decisions.md` 2026-06-01). DESIGN.md untouched; `--spacing-*` tokens untouched.
