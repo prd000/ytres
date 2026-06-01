@@ -155,6 +155,8 @@ A map of the project codebase — one line per file with its purpose. Update whe
 | `(app)/project/[id]/sources/page.tsx` | Sources tab — fetches project + subtopics + sources |
 | `(app)/project/[id]/chat/page.tsx` | Chat tab — fetches project + chat messages |
 | `(app)/project/[id]/report/page.tsx` | Report tab — fetches project + sources + existing report |
+| `(app)/project/actions.ts` | `"use server"` `createProject` Server Action — inserts into `projects`, redirects to new project Plan tab |
+| `(app)/project/new/page.tsx` | New project page — server component rendering `NewProjectForm` |
 
 ### `src/lib/` — Utilities and data layer
 
@@ -163,8 +165,7 @@ A map of the project codebase — one line per file with its purpose. Update whe
 | `utils.ts` | `cn()` (clsx + tailwind-merge), `formatRelativeDate()` |
 | `design/tokens.ts` | TS-side design maps: `STATUS_META` (ProjectStatus → label/toneClass/dotClass), `scoreClass()`, `scoreBarClass()` |
 | `data/types.ts` | Domain types: `ProjectStatus`, `SourceTier`, `SubtopicStatus`, `Project`, `Subtopic`, `Source`, `WorkerActivity`, `ChatMessage`, `Report`. Verbatim-reusable by real Supabase client. |
-| `data/fixtures.ts` | Typed mock dataset — 5 projects (all statuses), subtopics, sources (incl. low-quality scores), worker activity, chat thread with citations, report markdown |
-| `data/client.ts` | **THE swappable seam** — async data-access fns. Replace fn bodies with real Supabase calls in Phases 2+. |
+| `data/client.ts` | Real Supabase data-access layer — 7 async fns with row→domain mappers; `"server-only"` guard. `fixtures.ts` deleted. |
 | `data/dal.ts` | `getCurrentUser()` — server-only, React cache()-memoized, reads Supabase auth session |
 | `supabase/client.ts` | `createClient()` — `createBrowserClient` for Client Components |
 | `supabase/server.ts` | `createClient()` — `createServerClient` with async cookies() adapter (`server-only`) |
@@ -213,11 +214,12 @@ A map of the project codebase — one line per file with its purpose. Update whe
 | `dashboard/ProjectCard.tsx` | Project card — research question, StatusPill, relative date |
 | `dashboard/EmptyState.tsx` | Empty dashboard state with CTA |
 | `plan/PlanTab.tsx` | `"use client"` — source tier display, subtopic list with objectives+badges, Approve/Regenerate actions |
+| `project/NewProjectForm.tsx` | `"use client"` — create-project form: research question, tier checkboxes, recency months, `useActionState(createProject)` |
 | `research/ResearchTab.tsx` | Subtopic progress cards with animated running dots, latest activity, sources-stored count |
 | `sources/SourcesTab.tsx` | Sources grouped by subtopic |
 | `sources/SourceCard.tsx` | Source card — title (external TextLink), key takeaway, 4 ScorePills, tier Badge |
-| `chat/ChatTab.tsx` | `"use client"` — scrollable message thread + in-memory composer |
+| `chat/ChatTab.tsx` | `"use client"` — scrollable message thread; composer disabled (Phase 9 RAG pending) |
 | `chat/ChatMessage.tsx` | Chat bubble (user=coral, assistant=card) with citation chips |
-| `report/ReportTab.tsx` | `"use client"` — source selector + generate + .md download + preview |
+| `report/ReportTab.tsx` | `"use client"` — source selector + disabled Generate button (Phase 10 pending) + .md download + preview |
 | `report/SourceSelector.tsx` | Checkbox list with 25-source cap enforcement |
 | `report/ReportPreview.tsx` | `"use client"` — react-markdown with design-token styled components |

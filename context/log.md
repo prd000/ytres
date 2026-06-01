@@ -4,6 +4,54 @@ A running record of everything built/changed. Newest first.
 
 ---
 
+## 2026-05-31 — Remove dummy data; wire real Supabase reads; add create-project flow
+
+### What changed
+
+**Data layer — `web/src/lib/data/client.ts` (rewritten):**
+- All seven data-access functions now query live Supabase tables via `createClient()` from `@/lib/supabase/server` (RLS-enforced, returns only the signed-in user's rows).
+- Private mapper helpers (`mapProject`, `mapSubtopic`, `mapSource`, `mapWorkerActivity`, `mapChatMessage`, `mapReport`) translate snake_case DB columns → camelCase domain types and wrap `timestamptz` strings as `Date`.
+- `getSources` uses `select("*, source_subtopics(subtopic_id)")` to resolve the many-to-many subtopic join into `subtopicIds[]`.
+- On Supabase error, functions throw (page error boundary handles it); empty results return `[]`/`null` so existing empty-states render.
+- Added `"server-only"` import guard.
+
+**`web/src/lib/data/fixtures.ts` — deleted.** Confirmed no remaining imports.
+
+**New create-project flow:**
+- `web/src/app/(app)/project/actions.ts` — `"use server"` `createProject(formData)` Server Action: gets user via `supabase.auth.getUser()`, inserts into `projects` with `owner_id`, `research_question`, `source_tier_settings`, `status: "draft"`, then `redirect(/project/${id}/plan)`. Error shape mirrors `@/app/(auth)/actions.ts`.
+- `web/src/app/(app)/project/new/page.tsx` — server component that renders `NewProjectForm` inside a centered `PageContainer` layout.
+- `web/src/components/features/project/NewProjectForm.tsx` — `"use client"` form using `useActionState(createProject)`. Fields: research-question textarea (required), four tier checkboxes (academic/government default-checked), optional recency-months input, submit button with pending state.
+
+**Chat — `web/src/components/features/chat/ChatTab.tsx`:**
+- Removed mock assistant-message generation (`handleSend` / `setMessages` / `useState` for input).
+- Composer input and Send button are now permanently disabled with `cursor-not-allowed` styling.
+- Callout added: "AI-powered chat … becomes available once the RAG backend is connected (Phase 9)."
+- Real `initialMessages` from Supabase still render if present.
+
+**Report — `web/src/components/features/report/ReportTab.tsx`:**
+- Removed mock `handleGenerate` and `autoDraft` state.
+- "Generate report" button is permanently disabled.
+- Callout added: "Report generation arrives in Phase 10 when the coordinator agent is connected."
+- Source-selection checkboxes and "Download .md" (for real `existingReport`) remain functional.
+
+**TypeScript:** `npx tsc --noEmit` passes with zero errors.
+
+---
+
+## 2026-06-01 — Diagnostics: DB connection address-family logging (IPv6 "Network is unreachable")
+
+Render deploy crashed with `OSError: [Errno 101] Network is unreachable` at the TCP `sock.connect()` stage — a *different* failure from the earlier `_encode_db_url` parsing bugs (the URL now parses fine; the socket connect itself fails). Root cause is the Supabase IPv6 issue: the **direct** connection host `db.<ref>.supabase.co` resolves to **IPv6 only**, and Render has no IPv6 egress. Fix is to use the **Supabase Session pooler** URL (`aws-N-<region>.pooler.supabase.com`, user `postgres.<ref>`, port 5432), which is IPv4-proxied for free.
+
+Verified against the real Render DSN that `_encode_db_url()` correctly percent-encodes the password `,b6?%hT@C6,&wEs` → `%2Cb6%3F%25hT%40C6%2C%26wEs` and round-trips to the exact original. The pooler host + encoded password produce a valid DSN, so the live env var is correct; the failure log seen during debugging was a stale crash (identical nanosecond timestamp). Action: redeploy with **Clear build cache** so a fresh run picks up the pooler URL.
+
+Added startup diagnostics to `worker/worker/db.py`:
+- `_describe_target()` parses **host/port from the DSN without ever touching the password** (`urllib.parse.urlsplit`).
+- `_log_dns()` resolves the host and logs which address families it offers (`IPv4`, `IPv6`, or both); if **IPv6 only**, logs an explicit error naming the pooler fix.
+- `get_pool()` now logs `DB host <host>:<port> resolves to: …` before connecting and `DB pool ready (host:port)` after.
+- Defensive: port `6543` (transaction-mode pooler) → `statement_cache_size=0` (asyncpg prepared statements are incompatible with transaction pooling). Session mode (5432) / direct unaffected.
+
+---
+
 ## 2026-05-31 — Phase 3: Search Infrastructure
 
 Built the full Phase 3 search package (`worker/worker/search/`) — deterministic plumbing consumed by the Phase 6 worker pipeline. No LLM calls, no DB dependency; all tests are mocked (respx) and run without real network or API keys.

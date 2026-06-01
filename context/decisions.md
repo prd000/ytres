@@ -4,6 +4,20 @@ This file tracks architectural decisions and any deviations from the original PR
 
 ---
 
+## 2026-05-31 — Remove Phase 0 mock seam; wire real Supabase reads + create-project flow ahead of schedule
+
+**Decision:** Delete `fixtures.ts` and rewrite all seven `client.ts` functions to query live Supabase ahead of the originally scheduled phases (Phases 2/5/6/7/9/10). The create-project flow (`/project/new` page + `createProject` Server Action) was also built now to give the app a real data-entry point. Chat composer and Report generation are disabled in the UI with informational callouts until their backends land (Phase 9 RAG, Phase 10 coordinator).
+
+**Why:** The Supabase schema, RLS policies, and auth are all live from Phase 1. Running the app against fixtures while the real DB exists served no purpose and actively obscured whether the data layer worked. Building the create-project flow now was required — without it, deleting fixtures would leave the app unactionable (empty state with no way to add data).
+
+**Consequences:**
+- The dashboard and all project tabs now render live data scoped to the signed-in user via RLS.
+- `fixtures.ts` is permanently deleted; `client.ts` is now the Supabase query layer.
+- Chat and Report generation show "coming soon" callouts instead of mock content — no fake data is ever produced.
+- The `/project/new` 404 is fixed; the flow inserts a real row and redirects to the new project's Plan tab.
+
+---
+
 ## 2026-05-31 — Phase 3 search infrastructure decisions
 
 **Decision 1 — Swappable web provider (default Brave).**

@@ -20,18 +20,19 @@ These are required before the corresponding phase can run for real. None are wir
 
 ## Dummy / placeholder data in use
 
-Every screen in `ytres/web/` currently renders against mocked fixture data (`src/lib/data/fixtures.ts`). Swap each surface for real data by replacing the corresponding `client.ts` function with a live Supabase/REST call.
+`fixtures.ts` has been deleted. All `client.ts` read functions now query live Supabase. Tables start empty; data is created by the user via the create-project flow and by the worker pipeline. The two disabled UI surfaces are noted below.
 
-| Surface | Mock source | Replace in |
+| Surface | Status | Notes |
 |---|---|---|
-| Dashboard project list | `getProjects()` → `PROJECTS` fixture | Phase 2 |
-| Project header + status | `getProject(id)` → `PROJECTS` fixture | Phase 2 |
-| Plan subtopics | `getSubtopics(projectId)` → `SUBTOPICS` fixture | Phase 5 |
-| Source tier settings | embedded in `PROJECTS` fixture | Phase 2 |
-| Research worker activity | `getWorkerActivity(projectId)` → `WORKER_ACTIVITY` fixture | Phase 7 |
-| Sources by subtopic | `getSources(projectId)` → `SOURCES` fixture | Phase 6 |
-| Chat messages + citations | `getChatMessages(projectId)` → `CHAT_MESSAGES` fixture | Phase 9 |
-| Report markdown | `getReport(projectId)` → `REPORTS` fixture | Phase 10 |
+| Dashboard project list | **Live** — real Supabase `projects` table | |
+| Project header + status | **Live** — real Supabase `projects` table | |
+| Plan subtopics | **Live** — real Supabase `subtopics` table | |
+| Source tier settings | **Live** — embedded in `projects.source_tier_settings` jsonb | |
+| Research worker activity | **Live** — real Supabase `worker_activity` table | |
+| Sources by subtopic | **Live** — real Supabase `sources` + `source_subtopics` join | |
+| Chat messages + citations | **Live** reads, **UI disabled** — composer + Send locked; Callout shown | Connect RAG backend (Phase 9) to re-enable |
+| Report generation | **UI disabled** — Generate button locked; Callout shown | Connect coordinator agent (Phase 10) to re-enable |
+| Report download | **Live** — Download .md functional for any real `reports` row | |
 
 ## Font substitution (pre-acknowledged in DESIGN.md)
 
@@ -64,6 +65,18 @@ Search keys are now read by `worker/worker/config.py` but are all optional — t
 - `JINA_API_KEY` for Jina Reader (fallback extractor; free tier)
 
 Set `web_provider = "brave"` or `"tavily"` in `config.toml [search]` to choose the active provider.
+
+## Deploy action required: `SUPABASE_DB_URL` must be the Supabase **Session pooler** URL (not the direct connection)
+
+**Symptom:** worker crashes on Render with `OSError: [Errno 101] Network is unreachable` at `sock.connect()`.
+
+**Cause:** Supabase's **direct** connection host (`db.<project-ref>.supabase.co`) is **IPv6-only**, and Render has **no IPv6 egress**, so the socket connect fails. Unrelated to password encoding (already handled by `_encode_db_url`).
+
+**Fix (operator action, no code change needed):** In Supabase dashboard → **Connect** → **Session pooler**, copy that string and set it as `SUPABASE_DB_URL` on the Render `ytres-worker` service. It must use host `aws-N-<region>.pooler.supabase.com` (IPv4-proxied for free), username `postgres.<project-ref>` (dotted suffix), port `5432` (Session mode — keeps asyncpg prepared statements working). The current live value (pooler host, port 5432) is correct; after changing it, redeploy with **Clear build cache** so a fresh run picks it up.
+
+After redeploy, `worker/worker/db.py` logs `DB host <host>:<port> resolves to: IPv4/IPv6` at startup. If it prints **IPv6 only**, the env var is still the direct host. (Transaction-mode pooler on port `6543` also works — `db.py` auto-disables the statement cache — but Session mode is preferred for the long-lived worker pool.) The paid Supabase **dedicated IPv4 add-on** for the direct connection is an alternative but unnecessary — the pooler does the same job for free.
+
+---
 
 ## Pre-Phase-6 action required: `SUPABASE_DB_URL` percent-encoding
 
