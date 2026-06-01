@@ -4,6 +4,16 @@ A running record of everything built/changed. Newest first.
 
 ---
 
+## 2026-05-31 — Config refactor: secrets vs tuning
+
+Separated non-sensitive configuration from secrets.
+
+- Created `config.toml` at repo root — worker tuning (`concurrency`, `poll_interval`, `heartbeat_interval`, `watchdog_interval`, `stale_timeout_seconds`, `grace_shutdown_seconds`) and observability settings (`langchain_tracing`, `langchain_project`) now live here. Safe to commit.
+- Updated `worker/worker/config.py` to read tuning from `config.toml` via stdlib `tomllib`; only `SUPABASE_DB_URL` (and other API keys) remain in `.env`.
+- Stripped tuning vars and `LANGCHAIN_TRACING_V2`/`LANGCHAIN_PROJECT` from `.env` and `.env.example`. `.env` now contains secrets only.
+
+---
+
 ## 2026-05-31 — Phase 1: Infrastructure & Auth (Supabase-native)
 
 Built the full Phase 1 foundation: Supabase schema/migrations, database-backed job queue worker, real Supabase auth wired into the Next.js 16 shell, shared Pydantic schemas, Render deployment config, and pytest integration test suite.

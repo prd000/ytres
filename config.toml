@@ -1,0 +1,14 @@
+# ── Worker tuning ──────────────────────────────────────────────────────────────
+# Adjust these per deployment; no secrets here — safe to commit.
+[worker]
+concurrency           = 5
+poll_interval         = 2.0   # seconds between job-queue polls
+heartbeat_interval    = 10.0  # must be well under stale_timeout_seconds / 2
+watchdog_interval     = 60.0  # how often to scan for stale jobs
+stale_timeout_seconds = 90    # job is reclaimable after this many seconds without a heartbeat
+grace_shutdown_seconds = 30.0 # time allowed for in-flight jobs to finish on SIGTERM
+
+# ── Observability ──────────────────────────────────────────────────────────────
+[observability]
+langchain_tracing = true
+langchain_project = "ytres"
