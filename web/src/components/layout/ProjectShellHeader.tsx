@@ -1,4 +1,5 @@
 import { StatusPill } from "@/components/ui/StatusPill";
+import { DeleteProjectButton } from "@/components/layout/DeleteProjectButton";
 import type { Project } from "@/lib/data/types";
 
 interface ProjectShellHeaderProps {
@@ -16,11 +17,14 @@ export function ProjectShellHeader({ project }: ProjectShellHeaderProps) {
             </div>
             <h1 className="text-display-sm text-ink line-clamp-2">{project.researchQuestion}</h1>
           </div>
-          {(project.status === "researching" || project.status === "planning") && (
-            <button className="shrink-0 inline-flex items-center justify-center h-8 px-3 text-button text-muted border border-hairline rounded-md hover:border-error hover:text-error transition-colors text-sm">
-              Cancel
-            </button>
-          )}
+          <div className="flex shrink-0 items-center gap-2">
+            {(project.status === "researching" || project.status === "planning") && (
+              <button className="shrink-0 inline-flex items-center justify-center h-8 px-3 text-button text-muted border border-hairline rounded-md hover:border-error hover:text-error transition-colors text-sm">
+                Cancel
+              </button>
+            )}
+            <DeleteProjectButton projectId={project.id} />
+          </div>
         </div>
       </div>
     </div>

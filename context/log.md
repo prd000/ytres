@@ -4,6 +4,15 @@ A running record of everything built/changed. Newest first.
 
 ---
 
+## 2026-06-01 — Feature: delete a project (header button + confirmation dialog, cascade DB delete)
+
+- **Request:** `bug-corrections.md` "Major Features to add" #2 — a delete button for projects that also deletes from the database.
+- **Backend — no migration needed (verified the schema already supports it):** `projects_delete` RLS policy (`0005_rls_policies.sql:53`, `for delete using (owner_id = auth.uid())`) already gates deletion to the owner, and every child table (`subtopics`, `sources`, `source_subtopics`, `source_chunks`, `chat_messages`, `reports`, `jobs`, `worker_activity`, `project_members`) references `projects(id) on delete cascade`. A single `DELETE FROM projects` purges all derived data with no orphans.
+- **`web/src/app/(app)/project/actions.ts`** — new `deleteProject(projectId, _prev, _formData)` Server Action + `DeleteProjectState`, mirroring `approvePlan`/`regeneratePlan` (auth check → mutate → revalidate/redirect). Calls the existing `cancel_project_jobs` RPC best-effort first so a worker mid-job exits gracefully instead of erroring once the cascade removes its job row, then `supabase.from("projects").delete().eq("id", projectId)` (RLS enforces owner-only), then `revalidatePath("/dashboard")` + `redirect("/dashboard")`.
+- **`web/src/components/layout/DeleteProjectButton.tsx`** (new, `"use client"`) — error-toned "Delete" trigger styled to match the existing Cancel button; opens a Radix Dialog confirmation (same `@radix-ui/react-dialog` pattern as `TopNav`) with `Dialog.Title`/`Dialog.Description` for a11y. Confirm submits a `<form action>` bound to `deleteProject` via `useActionState`, showing a pending "Deleting…" state and rendering `state.error` inline on failure. Modal composed from existing tokens (`bg-surface-card`, `border-hairline`, `text-error`, `bg-error`/`text-on-primary`) — DESIGN.md has no modal primitive.
+- **`web/src/components/layout/ProjectShellHeader.tsx`** — wrapped the right-side actions in a `flex gap-2` cluster and rendered `<DeleteProjectButton projectId={project.id} />` beside the conditional Cancel button (header stays a server component).
+- **Verified:** `npx tsc --noEmit` clean; eslint clean (only the pre-existing `_prev`/`_formData` unused-arg warnings shared by the other actions). Live click-through + DB cascade check still to be run against a running stack — see the plan's verification section.
+
 ## 2026-06-01 — Worker bug: `generate_plan` crashed on `dict(ctx.job["payload"])` — fixed with an asyncpg json/jsonb codec
 
 - **Symptom (from the jobs table):** `generate_plan` jobs failed in production with `ValueError: dictionary update sequence element #0 has length 1; 2 is required` at `worker/worker/handlers/planner.py:86` (`payload: dict = dict(ctx.job["payload"])`).

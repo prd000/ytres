@@ -183,7 +183,7 @@ _(no active plans — all phases through 5 complete)_
 | `(app)/project/[id]/sources/page.tsx` | Sources tab — fetches project + subtopics + sources |
 | `(app)/project/[id]/chat/page.tsx` | Chat tab — fetches project + chat messages |
 | `(app)/project/[id]/report/page.tsx` | Report tab — fetches project + sources + existing report |
-| `(app)/project/actions.ts` | `"use server"` Server Actions: `createProject` (insert + enqueue generate_plan), `regeneratePlan` (re-enqueue + set planning), `approvePlan` (set researching) |
+| `(app)/project/actions.ts` | `"use server"` Server Actions: `createProject` (insert + enqueue generate_plan), `regeneratePlan` (re-enqueue + set planning), `approvePlan` (set researching), `deleteProject` (cancel_project_jobs RPC + cascade delete + redirect to dashboard) |
 | `(app)/project/new/page.tsx` | New project page — server component rendering `NewProjectForm` |
 
 ### `src/lib/` — Utilities and data layer
@@ -229,7 +229,8 @@ _(no active plans — all phases through 5 complete)_
 | `TopNav.tsx` | `"use client"` 64px cream sticky nav — accepts `user` + `signOut` props; signed-in cluster (email + sign-out form action) vs signed-out cluster (sign-in/get-started links); mobile hamburger → Radix Dialog sheet |
 | `Footer.tsx` | Dark navy footer — wordmark, nav links, copyright |
 | `AuthShell.tsx` | Centered cream card layout for login/signup screens |
-| `ProjectShellHeader.tsx` | Project title (serif), StatusPill, optional Cancel button |
+| `ProjectShellHeader.tsx` | Project title (serif), StatusPill, optional Cancel button, `DeleteProjectButton` |
+| `DeleteProjectButton.tsx` | `"use client"` — error-toned Delete trigger + Radix Dialog confirmation; `useActionState(deleteProject)` → cascade DB delete + redirect to dashboard |
 | `ProjectTabNav.tsx` | `"use client"` — tab links using `usePathname()` for active state; category-tab token styling |
 
 ### `src/components/features/` — Feature composites

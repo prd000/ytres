@@ -8,6 +8,7 @@ import type { SourceTierSettings } from "@/lib/data/types";
 export type CreateProjectState = { error: string } | undefined;
 export type RegeneratePlanState = { error: string } | undefined;
 export type ApprovePlanState = { error: string } | undefined;
+export type DeleteProjectState = { error: string } | undefined;
 
 export async function createProject(
   _prev: CreateProjectState,
@@ -109,4 +110,29 @@ export async function approvePlan(
   if (error) return { error: error.message };
 
   revalidatePath(`/project/${projectId}/plan`);
+}
+
+export async function deleteProject(
+  projectId: string,
+  _prev: DeleteProjectState,
+  _formData: FormData
+): Promise<DeleteProjectState> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError || !user) return { error: "Not authenticated." };
+
+  // Best-effort: stop any in-flight worker job so the handler exits gracefully
+  // instead of erroring once the cascade removes its job row below.
+  await supabase.rpc("cancel_project_jobs", { p_project_id: projectId });
+
+  // RLS (projects_delete: owner_id = auth.uid()) gates this to the owner; the
+  // `on delete cascade` FKs purge all subtopics, sources, chunks, chat, and reports.
+  const { error } = await supabase.from("projects").delete().eq("id", projectId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard");
+  redirect("/dashboard");
 }
