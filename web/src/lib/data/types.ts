@@ -1,5 +1,5 @@
 export type ProjectStatus = "draft" | "planning" | "researching" | "complete" | "cancelled";
-export type SourceTier = "academic" | "government" | "news" | "industry";
+export type SourceTier = "academic" | "government" | "news" | "industry" | "social_media";
 export type SubtopicStatus = "queued" | "running" | "complete" | "failed" | "cancelled";
 export type ChatRole = "user" | "assistant";
 
@@ -8,6 +8,7 @@ export interface SourceTierSettings {
   government: boolean;
   news: boolean;
   industry: boolean;
+  socialMedia: boolean;
   recencyMonths: number | null;
 }
 

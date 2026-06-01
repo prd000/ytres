@@ -12,8 +12,8 @@ export function SignupForm() {
   );
 
   return (
-    <form action={action} className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
+    <form action={action} className="flex flex-col gap-5">
+      <div className="flex flex-col gap-2">
         <label htmlFor="name" className="text-caption text-ink">Full name</label>
         <Input
           id="name"
@@ -24,7 +24,7 @@ export function SignupForm() {
           autoComplete="name"
         />
       </div>
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-2">
         <label htmlFor="email" className="text-caption text-ink">Email</label>
         <Input
           id="email"
@@ -35,7 +35,7 @@ export function SignupForm() {
           autoComplete="email"
         />
       </div>
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-2">
         <label htmlFor="password" className="text-caption text-ink">Password</label>
         <Input
           id="password"
@@ -55,7 +55,7 @@ export function SignupForm() {
       <button
         type="submit"
         disabled={pending}
-        className="mt-2 w-full h-10 text-button bg-primary text-on-primary rounded-md hover:bg-primary-active transition-colors disabled:opacity-60"
+        className="mt-4 w-full h-10 text-button bg-primary text-on-primary rounded-md hover:bg-primary-active transition-colors disabled:opacity-60"
       >
         {pending ? "Creating account…" : "Create account"}
       </button>

@@ -3,11 +3,12 @@ import { ScorePill } from "@/components/ui/ScorePill";
 import { TextLink } from "@/components/ui/TextLink";
 import type { Source } from "@/lib/data/types";
 
-const TIER_LABELS = {
+const TIER_LABELS: Record<string, string> = {
   academic: "Academic",
   government: "Government",
   news: "News",
   industry: "Industry",
+  social_media: "Social media",
 };
 
 interface SourceCardProps {

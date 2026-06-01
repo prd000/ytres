@@ -4,6 +4,68 @@ A running record of everything built/changed. Newest first.
 
 ---
 
+## 2026-05-31 — Phase 4 + 5 (Storage, Embeddings, Planner) + Realtime + social_media tier
+
+### Part A — Worker LLM layer (`worker/worker/llm/`)
+- `llm/config.py` — frozen `LLMConfig` dataclass + `from_env()` reading `config.toml [llm]` + env vars.
+- `llm/factory.py` — `build_chat_model(cfg, role)` returning `ChatOpenAI` pointed at DeepSeek's OpenAI-compatible endpoint (`base_url` in config); provider swap = config edit.
+- `llm/schemas.py` — `SourceTier` literal, `PlannedSubtopic`, `ResearchPlan` (3–8 subtopics guardrail) for structured output.
+- `config.toml` — added `[llm]` block with model IDs, temperature, timeout, embedding model/dims.
+- `worker/worker/config.py` — added `DEEPSEEK_API_KEY` and `OPENAI_API_KEY` from env.
+- `worker/pyproject.toml` — added `langchain-core>=0.3`, `langchain-openai>=0.2`, `openai>=1.40`, `tiktoken>=0.7`.
+
+### Part B — Storage & Embeddings (`worker/worker/storage/`)
+- `storage/chunking.py` — `count_tokens()` + `chunk_text()` using tiktoken cl100k_base; sliding window with configurable chunk/overlap tokens.
+- `storage/embeddings.py` — `Embedder` wrapping `AsyncOpenAI`; batched ≤128, order-preserving, dimension-asserted.
+- `storage/store.py` — `store_source()` (upsert with `xmax=0` created flag + subtopic link) and `store_chunks()` (executemany with `$N::vector` string-cast); no pgvector codec required.
+- `storage/search.py` — `match_chunks()` wrapper calling the `match_chunks` SQL function, returns `ChunkMatch` list.
+
+### Part C — Planner handler (`worker/worker/handlers/planner.py`, job type `generate_plan`)
+- `handlers/planner.py` — reads project row, builds coordinator messages, invokes DeepSeek with `function_calling`→`json_mode` fallback, delete-then-inserts subtopics in a transaction (idempotent on resume/regenerate).
+- `shared/schemas/job_payloads.py` — added `GeneratePlanPayload`; registered `generate_plan` in `JOB_PAYLOAD_MODELS`.
+- `handlers/__init__.py` — registered `"generate_plan": planner_handle`.
+
+### Part D — SQL migrations
+- `0007_vector_indexes.sql` — ivfflat cosine index + GIN FTS index + btree project_id index on `source_chunks`.
+- `0008_match_chunks.sql` — `match_chunks()` SQL function; vector CTE + keyword CTE full-outer-joined via Reciprocal Rank Fusion.
+- `0009_social_media_tier.sql` — `ALTER TYPE source_tier ADD VALUE IF NOT EXISTS 'social_media'`.
+
+### Part E — Web Server Actions + Plan tab rewrite
+- `web/src/app/(app)/project/actions.ts` — `createProject` now sets `status: "planning"` and enqueues `generate_plan` job on submit. Added `regeneratePlan` (insert job + set planning + revalidate) and `approvePlan` (set researching + revalidate) Server Actions.
+- `web/src/components/features/plan/PlanTab.tsx` — rewrote action area: loading dots when planning with no subtopics; real Approve/Regenerate forms via `useActionState` + `.bind()`; two separate forms sharing a textarea via HTML `form` attribute (no nesting).
+
+### Part F — Realtime (pulled forward)
+- `web/src/components/features/realtime/ProjectRealtime.tsx` — `"use client"` component subscribing to `postgres_changes` on `subtopics` + `projects` filtered by project ID; calls `router.refresh()` on any event.
+- `web/src/app/(app)/project/[id]/layout.tsx` — mounts `<ProjectRealtime projectId={id} />` so subscription stays live across tab switches.
+
+### Part G — `social_media` source tier (cross-cutting)
+- `web/src/lib/data/types.ts` — `SourceTier` union + `socialMedia: boolean` to `SourceTierSettings`.
+- `web/src/components/features/project/NewProjectForm.tsx` — added `{ key: "social_media", label: "Social media" }` tier checkbox.
+- `web/src/app/(app)/project/actions.ts` (createProject) — reads `social_media` checkbox → `socialMedia` in `SourceTierSettings`.
+- `web/src/components/features/plan/PlanTab.tsx` — added `social_media: "Social media"` to `TIER_LABELS`; renders in source-preferences block and subtopic tier badges.
+
+### Tests
+- `worker/tests/test_chunking.py` — pure unit tests (empty, short, long, overlap error, token limits).
+- `worker/tests/test_embeddings.py` — fake AsyncOpenAI client; dimension check, order preservation, empty→no call, 300-text batching.
+- `worker/tests/test_storage.py` — integration vs real PG: store_source insert/dedup/idempotent link; store_chunks vector rows.
+- `worker/tests/test_hybrid_search.py` — integration: vector-near ranks high, keyword surfaces, project scoping, match_count limit, scores descending.
+- `worker/tests/test_planner.py` — mocked LLM; subtopic count/order/enum-array; regenerate replaces; idempotent resume; pre/post-LLM cancellation; status unchanged; missing project raises; checkpoint sequence.
+- `worker/tests/test_contract.py` — extended with `GeneratePlanPayload` valid/invalid/missing-id and registry assertions.
+
+---
+
+## 2026-05-31 — Fix "Not authenticated" on project creation + auth page spacing (bug #1)
+
+### Root cause
+`web/proxy.ts` was at the Next.js project root, but the app lives under `web/src/app/`. Next.js 16 only picks up `proxy.ts` when it sits alongside `app/` — i.e. at `web/src/proxy.ts`. With the proxy silently ignored, unauthenticated users reached protected routes without being redirected to `/login`, and only hit the wall when `createProject`'s `supabase.auth.getUser()` returned null.
+
+### Changes
+- **`web/proxy.ts` → `web/src/proxy.ts`** (content unchanged): proxy now runs on every request, refreshing the Supabase session and redirecting unauthenticated visitors away from `(app)` routes. "Not authenticated" error on project creation is resolved.
+- **`web/src/components/layout/AuthShell.tsx`**: card widened `max-w-sm` → `max-w-md` (448px); header bottom margin `mb-6` → `mb-8`; subtitle top margin `mt-1` → `mt-2` — matches DESIGN.md generous-whitespace intent.
+- **`web/src/components/features/auth/LoginForm.tsx`** and **`SignupForm.tsx`**: field gap `gap-4` → `gap-5`; label↔input gap `gap-1.5` → `gap-2`; submit button top margin `mt-2` → `mt-4` for editorial breathing room.
+
+---
+
 ## 2026-05-31 — Remove dummy data; wire real Supabase reads; add create-project flow
 
 ### What changed

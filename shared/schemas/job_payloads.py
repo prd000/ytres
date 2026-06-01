@@ -18,9 +18,17 @@ class EchoPayload(BaseModel):
     echo: str | None = None
 
 
+class GeneratePlanPayload(BaseModel):
+    """Payload for the 'generate_plan' job type (Phase 5 planner)."""
+    project_id: str
+    feedback: str | None = None
+    progress: str | None = None
+
+
 # Registry mapping job type names to their payload model.
 JOB_PAYLOAD_MODELS: dict[str, type[BaseModel]] = {
     "echo": EchoPayload,
+    "generate_plan": GeneratePlanPayload,
 }
 
 

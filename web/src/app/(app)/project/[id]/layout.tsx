@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getProject } from "@/lib/data/client";
 import { ProjectShellHeader } from "@/components/layout/ProjectShellHeader";
 import { ProjectTabNav } from "@/components/layout/ProjectTabNav";
+import { ProjectRealtime } from "@/components/features/realtime/ProjectRealtime";
 import { ReactNode } from "react";
 
 export default async function ProjectLayout(props: LayoutProps<"/project/[id]">) {
@@ -12,7 +13,8 @@ export default async function ProjectLayout(props: LayoutProps<"/project/[id]">)
 
   return (
     <div className="flex flex-col flex-1">
-      {/* These stay mounted as tab content swaps — Phase 7 Realtime seam */}
+      {/* Realtime subscription — stays mounted across tab switches */}
+      <ProjectRealtime projectId={id} />
       <ProjectShellHeader project={project} />
       <ProjectTabNav projectId={id} />
       <div className="flex-1 bg-canvas">{props.children}</div>

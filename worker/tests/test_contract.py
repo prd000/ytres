@@ -10,7 +10,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "shared"))
 
-from schemas.job_payloads import EchoPayload, WorkerActivityRow
+from schemas.job_payloads import EchoPayload, GeneratePlanPayload, WorkerActivityRow, JOB_PAYLOAD_MODELS
 
 
 def test_echo_payload_valid():
@@ -51,3 +51,29 @@ def test_worker_activity_row_invalid_status():
             sources_stored=0,
             status="invalid_status",  # type: ignore[arg-type]
         )
+
+
+def test_generate_plan_payload_valid():
+    p = GeneratePlanPayload(project_id="abc-123")
+    assert p.project_id == "abc-123"
+    assert p.feedback is None
+    assert p.progress is None
+
+
+def test_generate_plan_payload_with_feedback():
+    p = GeneratePlanPayload(project_id="abc-123", feedback="Add more on policy")
+    assert p.feedback == "Add more on policy"
+
+
+def test_generate_plan_payload_missing_project_id_raises():
+    with pytest.raises(ValidationError):
+        GeneratePlanPayload()  # type: ignore[call-arg]
+
+
+def test_registry_has_generate_plan():
+    assert "generate_plan" in JOB_PAYLOAD_MODELS
+    assert JOB_PAYLOAD_MODELS["generate_plan"] is GeneratePlanPayload
+
+
+def test_registry_has_echo():
+    assert "echo" in JOB_PAYLOAD_MODELS

@@ -17,9 +17,7 @@ A map of the project codebase — one line per file with its purpose. Update whe
 
 ## `agent/` — Active planning artifacts
 
-| File | Purpose |
-|---|---|
-| `phase-2-plan.md` | Phase 2 implementation plan — Projects Module: status state machine, project CRUD via Server Actions, RLS isolation, source-tier settings |
+_(no active plans — all phases through 5 complete)_
 
 ## `agent-complete/` — Completed planning artifacts
 
@@ -28,6 +26,7 @@ A map of the project codebase — one line per file with its purpose. Update whe
 | `phase-0-plan.md` | Phase 0 implementation plan — detailed spec for the navigable frontend shell (complete) |
 | `phase-1-plan.md` | Phase 1 implementation plan (Supabase-native, FastAPI-free) — schema/RLS, job queue + RPCs, worker scaffold, Supabase auth wiring (complete) |
 | `phase-3-plan.md` | Phase 3 implementation plan — search infrastructure: web providers, Semantic Scholar, extraction chain, router (complete) |
+| `phase-4-5-plan.md` | Phase 4+5 implementation plan — storage/embeddings + planner + Realtime + social_media tier (complete) |
 
 ---
 
@@ -42,6 +41,9 @@ A map of the project codebase — one line per file with its purpose. Update whe
 | `migrations/0004_sharing.sql` | project_role enum + project_members table (Phase 11 groundwork) |
 | `migrations/0005_rls_policies.sql` | RLS enabled on all tables; can_access_project() + can_write_project() SECURITY DEFINER helpers; all SELECT/INSERT/UPDATE/DELETE policies |
 | `migrations/0006_rpc.sql` | Queue RPCs: claim_job(), heartbeat_job(), reclaim_stale_jobs(), complete_job(), fail_job(), cancel_project_jobs() |
+| `migrations/0007_vector_indexes.sql` | ivfflat cosine + GIN FTS + btree project_id indexes on source_chunks |
+| `migrations/0008_match_chunks.sql` | `match_chunks()` SQL function — hybrid vector+keyword search via Reciprocal Rank Fusion |
+| `migrations/0009_social_media_tier.sql` | `ALTER TYPE source_tier ADD VALUE 'social_media'` |
 
 ---
 
@@ -60,6 +62,26 @@ A map of the project codebase — one line per file with its purpose. Update whe
 | `main.py` | Entry point (`python -m worker.main`): setup_logging, pool init, signal handlers, runs loop.run() |
 | `handlers/__init__.py` | `HANDLERS` registry mapping job type strings to handler coroutines |
 | `handlers/echo.py` | Phase 1 proof-of-concept handler: checkpoints through steps, echoes payload.message, completes |
+| `handlers/planner.py` | Phase 5 planner handler (job type `generate_plan`): reads project, calls DeepSeek coordinator, writes subtopics in transaction |
+
+### `worker/worker/llm/` — Phase 5 LLM layer
+
+| File | Purpose |
+|---|---|
+| `__init__.py` | Package marker |
+| `config.py` | Frozen `LLMConfig` dataclass + `from_env()` reading `config.toml [llm]` + env (no DB dep) |
+| `factory.py` | `build_chat_model(cfg, role)` — returns `ChatOpenAI` pointed at DeepSeek base_url; provider swap = config edit |
+| `schemas.py` | Structured-output Pydantic models: `SourceTier`, `PlannedSubtopic`, `ResearchPlan` (3–8 subtopics guardrail) |
+
+### `worker/worker/storage/` — Phase 4 storage & embeddings
+
+| File | Purpose |
+|---|---|
+| `__init__.py` | Package marker |
+| `chunking.py` | `count_tokens()` + `chunk_text()` — pure, no I/O; tiktoken cl100k_base sliding window |
+| `embeddings.py` | `Embedder` class wrapping `AsyncOpenAI`; batched ≤128, order-preserving, dimension-asserted |
+| `store.py` | `store_source()` (upsert + subtopic link) + `store_chunks()` (executemany `$N::vector` string cast) |
+| `search.py` | `match_chunks()` — calls the SQL function, returns `ChunkMatch` list |
 
 ### `worker/worker/search/` — Phase 3 search infrastructure
 
@@ -97,6 +119,11 @@ A map of the project codebase — one line per file with its purpose. Update whe
 | `test_extraction.py` | raw_content short-circuit, trafilatura (monkeypatched), Jina (respx), fallback chain |
 | `test_search_router.py` | Tier routing, de-duplication, single web call (v1), provider tagging |
 | `test_degradation.py` | Partial failures (one backend down), all-down → SearchError |
+| `test_chunking.py` | Pure unit tests: empty, short, long overlap, token limits, index sequence |
+| `test_embeddings.py` | Fake AsyncOpenAI: dimensions, order, empty→no-call, 300-text batching |
+| `test_storage.py` | Integration: store_source insert/dedup/idempotent link; store_chunks vector rows |
+| `test_hybrid_search.py` | Integration: vector-near ranks high, keyword surfaces, project scoping, match_count limit, scores descending |
+| `test_planner.py` | Mocked LLM: subtopic count/order/enum-array, regenerate, idempotent, cancel pre/post-LLM, status unchanged |
 
 | Root file | Purpose |
 |---|---|
@@ -155,7 +182,7 @@ A map of the project codebase — one line per file with its purpose. Update whe
 | `(app)/project/[id]/sources/page.tsx` | Sources tab — fetches project + subtopics + sources |
 | `(app)/project/[id]/chat/page.tsx` | Chat tab — fetches project + chat messages |
 | `(app)/project/[id]/report/page.tsx` | Report tab — fetches project + sources + existing report |
-| `(app)/project/actions.ts` | `"use server"` `createProject` Server Action — inserts into `projects`, redirects to new project Plan tab |
+| `(app)/project/actions.ts` | `"use server"` Server Actions: `createProject` (insert + enqueue generate_plan), `regeneratePlan` (re-enqueue + set planning), `approvePlan` (set researching) |
 | `(app)/project/new/page.tsx` | New project page — server component rendering `NewProjectForm` |
 
 ### `src/lib/` — Utilities and data layer
@@ -213,7 +240,8 @@ A map of the project codebase — one line per file with its purpose. Update whe
 | `dashboard/DashboardView.tsx` | Projects grid + New project button |
 | `dashboard/ProjectCard.tsx` | Project card — research question, StatusPill, relative date |
 | `dashboard/EmptyState.tsx` | Empty dashboard state with CTA |
-| `plan/PlanTab.tsx` | `"use client"` — source tier display, subtopic list with objectives+badges, Approve/Regenerate actions |
+| `plan/PlanTab.tsx` | `"use client"` — source tier display, subtopic list; real Approve/Regenerate Server Actions via useActionState; loading dots when planning with no subtopics |
+| `realtime/ProjectRealtime.tsx` | `"use client"` — Supabase Realtime subscription for subtopics+projects; calls router.refresh() on changes; mounted in project layout |
 | `project/NewProjectForm.tsx` | `"use client"` — create-project form: research question, tier checkboxes, recency months, `useActionState(createProject)` |
 | `research/ResearchTab.tsx` | Subtopic progress cards with animated running dots, latest activity, sources-stored count |
 | `sources/SourcesTab.tsx` | Sources grouped by subtopic |

@@ -68,6 +68,10 @@ BRAVE_SEARCH_API_KEY: str | None = os.environ.get("BRAVE_SEARCH_API_KEY")
 TAVILY_API_KEY:       str | None = os.environ.get("TAVILY_API_KEY")
 JINA_API_KEY:         str | None = os.environ.get("JINA_API_KEY")
 
+# ── LLM / Embeddings ──────────────────────────────────────────────────────────
+DEEPSEEK_API_KEY: str | None = os.environ.get("DEEPSEEK_API_KEY")
+OPENAI_API_KEY:   str | None = os.environ.get("OPENAI_API_KEY")
+
 # ── Observability — set as env vars so LangChain SDK picks them up automatically
 os.environ.setdefault("LANGCHAIN_TRACING_V2", str(_obs.get("langchain_tracing", False)).lower())
 os.environ.setdefault("LANGCHAIN_PROJECT",    _obs.get("langchain_project", "ytres"))

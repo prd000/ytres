@@ -9,6 +9,7 @@ const TIERS = [
   { key: "government", label: "Government" },
   { key: "news", label: "News" },
   { key: "industry", label: "Industry" },
+  { key: "social_media", label: "Social media" },
 ] as const;
 
 export function NewProjectForm() {

@@ -4,6 +4,25 @@ This file tracks architectural decisions and any deviations from the original PR
 
 ---
 
+## 2026-05-31 — Phase 4+5 architectural decisions
+
+**Decision 1 — `ChatOpenAI` + DeepSeek `base_url` over `langchain-deepseek` package.**
+Use `langchain_openai.ChatOpenAI` with `base_url="https://api.deepseek.com/v1"` and `api_key=DEEPSEEK_API_KEY`. This is the PRD-mandated model-agnostic OpenAI-compatible interface: changing the provider = changing config.toml + env vars, zero code change. The `langchain-deepseek` package is a thin wrapper that adds a dependency without enabling anything that the OpenAI-compatible interface doesn't already provide.
+
+**Decision 2 — Hybrid search as a SQL `match_chunks` function with Reciprocal Rank Fusion.**
+The vector CTE (cosine similarity via pgvector) and keyword CTE (FTS via `ts_rank`/`plainto_tsquery`) are full-outer-joined and their ranks fused with RRF (`1/(60+rank)`) in a single `language sql stable` function. Lives as a migration so the Phase 6 worker pipeline and the Phase 9 RAG chatbot share one canonical implementation with no drift risk. Not `SECURITY DEFINER` — the worker bypasses RLS; an authenticated wrapper is deferred to Phase 9.
+
+**Decision 3 — pgvector via `$N::vector` string-cast, no codec registration.**
+Vectors are inserted as PostgreSQL text literals (`[1.0, 2.0, ...]`) and cast with `$N::vector` in the SQL statement. asyncpg passes the string as `text` and PostgreSQL handles the cast. This avoids the asyncpg codec registration ceremony and works correctly with `executemany`.
+
+**Decision 4 — Planner runs as a worker job; web sets `planning`; subtopic presence signals ready.**
+`createProject` and `regeneratePlan` Server Actions set `project.status = "planning"` and enqueue a `generate_plan` job. The worker never mutates `project.status` — the presence of subtopics is the signal that the plan is ready for review. This keeps responsibilities cleanly separated: web owns status transitions triggered by user actions; worker owns data writes.
+
+**Decision 5 — Realtime pulled forward into Phase 5 (was Phase 7).**
+The Plan tab needs live subtopic updates when the planner worker finishes. Adding `ProjectRealtime.tsx` now (subscribed to `subtopics` + `projects` changes, calls `router.refresh()`) avoids building interim polling and uses the architecture already committed to. The component lives in the project layout so it stays mounted across tab switches — exactly the Phase 7 seam, just activated early.
+
+---
+
 ## 2026-05-31 — Remove Phase 0 mock seam; wire real Supabase reads + create-project flow ahead of schedule
 
 **Decision:** Delete `fixtures.ts` and rewrite all seven `client.ts` functions to query live Supabase ahead of the originally scheduled phases (Phases 2/5/6/7/9/10). The create-project flow (`/project/new` page + `createProject` Server Action) was also built now to give the app a real data-entry point. Chat composer and Report generation are disabled in the UI with informational callouts until their backends land (Phase 9 RAG, Phase 10 coordinator).

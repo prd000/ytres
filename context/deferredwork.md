@@ -82,6 +82,42 @@ After redeploy, `worker/worker/db.py` logs `DB host <host>:<port> resolves to: I
 
 The `_encode_db_url()` fix in `worker/worker/config.py` handles the encoding at import time. Before Phase 6 wiring, verify the worker boots cleanly against the real Supabase DB URL by running it locally: `python -m worker.main`. If the URL still breaks asyncpg, manually percent-encode special chars in the password: `@`→`%40`, `?`→`%3F`, `%`→`%25`, `&`→`%26`, `,`→`%2C`.
 
+## Phase 4+5 user actions required (added 2026-05-31)
+
+### API keys — now required to run end-to-end
+
+| Env var | Service | Notes |
+|---|---|---|
+| `DEEPSEEK_API_KEY` | DeepSeek | Coordinator/worker/classifier. Add to `worker/.env` and Render `ytres-worker` env vars. |
+| `OPENAI_API_KEY` | OpenAI | `text-embedding-3-small` embeddings. Add to `worker/.env` and Render env vars. |
+| `LANGCHAIN_API_KEY` | LangSmith | Tracing on every LLM call (`LANGCHAIN_TRACING_V2=true` already set in config.toml). Add to `worker/.env`. |
+
+### Migrations — apply before testing
+
+```
+supabase db push
+```
+
+Migrations 0007 (vector indexes), 0008 (match_chunks function), 0009 (social_media enum value) must be applied.
+
+Confirm in Supabase dashboard:
+- `source_tier` enum includes `social_media`
+- `match_chunks` function exists in the public schema
+- Realtime is enabled for `subtopics` and `projects` tables
+
+### ivfflat REINDEX after data
+
+The ivfflat index (migration 0007) trains on data at CREATE time. After substantial source_chunks data exists:
+```sql
+REINDEX INDEX CONCURRENTLY <index_name>;
+```
+HNSW is the no-tuning upgrade path for a future migration when scale justifies it.
+
+### Phase 6 deferred wiring
+
+- `approvePlan` Server Action transitions status to `"researching"` but does NOT enqueue `research_subtopic` jobs — there is no handler for that job type yet. Phase 6 will add the handler and wire `approvePlan` to enqueue one job per subtopic.
+- `social_media` tier is stored and displayed but has no search router entry yet. Phase 6 will route it to a web/Reddit provider.
+
 ## Open questions to resolve
 
 - _(resolved 2026-05-29)_ ~~DeepSeek "V4 Pro" / "Flash" model IDs~~ — confirmed real: `deepseek-v4-pro` and `deepseek-v4-flash`, both 1M-token context. The 100K handoff ceiling is a self-imposed cost/quality cap, not a model limit.
