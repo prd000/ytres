@@ -55,6 +55,15 @@
   --spacing-xl: 2rem;
   --spacing-xxl: 3rem;
   --spacing-section: 6rem;
+
+  /* Layout widths — feed `max-w-*`. Named semantically (not sm/md/lg/xl) so they
+     don't collide with the spacing tokens above: in Tailwind v4 a `--spacing-md`
+     shadows the container scale, which would make `max-w-md` resolve to 16px.
+     For layout widths use `max-w-card` / `max-w-panel` / `max-w-content` —
+     NOT the bare t-shirt utilities (`max-w-md`, `max-w-sm`, …). */
+  --container-card: 28rem;     /* auth / login card */
+  --container-panel: 24rem;    /* mobile drawer, narrow empty-state text */
+  --container-content: 75rem;  /* DESIGN.md max content width (~1200px), centered */
 }
 
 /* ─── Dark Mode ───────────────────────────────────────────────────────────── */

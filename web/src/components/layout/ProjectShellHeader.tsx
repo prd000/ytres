@@ -8,7 +8,7 @@ interface ProjectShellHeaderProps {
 export function ProjectShellHeader({ project }: ProjectShellHeaderProps) {
   return (
     <div className="bg-canvas border-b border-hairline py-5">
-      <div className="mx-auto w-full max-w-[1200px] px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-content px-4 sm:px-6 lg:px-8">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3 mb-1">

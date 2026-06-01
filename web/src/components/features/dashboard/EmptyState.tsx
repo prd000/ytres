@@ -8,7 +8,7 @@ export function EmptyState() {
         <SpikeMark size={20} className="text-muted" />
       </div>
       <h2 className="text-title-lg text-ink mb-2">No research projects yet</h2>
-      <p className="text-body-md text-muted max-w-[24rem] mb-8">
+      <p className="text-body-md text-muted max-w-panel mb-8">
         Start your first project by submitting a research question. AI agents will handle the rest.
       </p>
       <Link

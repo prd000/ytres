@@ -4,6 +4,17 @@ A running record of everything built/changed. Newest first.
 
 ---
 
+## 2026-06-01 — Bug #1 follow-up: semantic layout-width tokens (replaces the arbitrary-value hotfix)
+
+- Adopted the DESIGN.md-faithful fix for the token collision (see `decisions.md` 2026-06-01). DESIGN.md untouched; `--spacing-*` tokens untouched.
+- `globals.css` `@theme`: added `--container-card: 28rem`, `--container-panel: 24rem`, `--container-content: 75rem` (~1200px, DESIGN.md's max content width), plus a comment documenting the collision and the convention to use these instead of the bare `max-w-{sm,md,lg,xl}` utilities.
+- Swapped components off arbitrary values / hard-coded widths onto the semantic utilities:
+  - `AuthShell.tsx` → `max-w-card` (and removed the now-redundant explanatory comment).
+  - `EmptyState.tsx`, `ChatTab.tsx` → `max-w-panel`.
+  - `TopNav.tsx` mobile drawer → `max-w-panel`.
+  - `PageContainer.tsx` and `ProjectShellHeader.tsx` → `max-w-content` (was `max-w-[1200px]` in both).
+- **Verified** against a clean production build: generated CSS has `.max-w-card{max-width:var(--container-card)}` etc. with `--container-card:28rem` / `--container-panel:24rem` / `--container-content:75rem`; `/login` serves 200 with `w-full max-w-card mx-auto`; no leftover hard-coded `max-w-[…]` widths and no dead `.max-w-md` rule.
+
 ## 2026-06-01 — Bug #1 fix (CORRECTED): Tailwind token collision shrank `max-w-{sm,md}` to spacing values
 
 - **Real root cause (found by inspecting the generated production CSS):** the custom design tokens in `globals.css` `@theme` — `--spacing-sm: .75rem`, `--spacing-md: 1rem`, etc. — **shadow Tailwind v4's container scale** for the matching t-shirt-size keys. So the build emits `.max-w-md{max-width:var(--spacing-md)}` (**16px**) and `.max-w-sm{max-width:var(--spacing-sm)}` (**12px**) instead of `--container-md` (28rem) / `--container-sm` (24rem). The login card was therefore capped at 16px → the "thin column". `/project/new` was unaffected because it uses `max-w-2xl` (no `--spacing-2xl` exists, so it correctly resolves to `--container-2xl`).

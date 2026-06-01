@@ -4,6 +4,14 @@ This file tracks architectural decisions and any deviations from the original PR
 
 ---
 
+## 2026-06-01 — Semantic layout-width tokens to resolve the Tailwind v4 spacing/container collision
+
+**Decision:** Keep DESIGN.md's named spacing scale (`--spacing-xxs … --spacing-section`) exactly as-is, and introduce a separate set of **semantic layout-width tokens** in `globals.css @theme` for `max-w-*`: `--container-card` (28rem), `--container-panel` (24rem), `--container-content` (75rem / ~1200px). Components use `max-w-card` / `max-w-panel` / `max-w-content`; the bare Tailwind t-shirt width utilities (`max-w-md`, `max-w-sm`, …) are **not** used for layout.
+
+**Why:** In Tailwind v4, a custom `--spacing-md` token shadows the built-in `--container-md`, so `max-w-md` compiled to `var(--spacing-md)` = 16px (and `max-w-sm` = 12px). That was the true cause of bug #1 (login card collapsed to a thin column) and also broke the dashboard/chat empty states and the mobile nav drawer. The two scales genuinely share the `sm/md/lg/xl` keyspace, so you cannot have both `--spacing-md` (for `p-md`) and `max-w-md` = 28rem — one key has one meaning. Rather than drop the DESIGN.md-faithful spacing tokens, we move layout widths onto a non-colliding, semantically-named namespace. Bonus: `--container-content` now encodes DESIGN.md's "~1200px centered" rule as a real token instead of a hard-coded `max-w-[1200px]` repeated across `PageContainer` and `ProjectShellHeader`.
+
+**Trade-off / convention:** The bare `max-w-{sm,md,lg,xl}` utilities remain shadowed (still resolve to the small spacing values). This is unavoidable while the named spacing scale exists. Convention: always use `max-w-card/panel/content` for layout widths; a comment in `globals.css` documents this. DESIGN.md is unchanged.
+
 ## 2026-05-31 — Phase 4+5 architectural decisions
 
 **Decision 1 — `ChatOpenAI` + DeepSeek `base_url` over `langchain-deepseek` package.**

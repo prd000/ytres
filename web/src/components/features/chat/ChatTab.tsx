@@ -30,7 +30,7 @@ export function ChatTab({ projectId: _projectId, initialMessages }: ChatTabProps
           {initialMessages.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <p className="text-title-md text-ink mb-2">No messages yet</p>
-              <p className="text-body-sm text-muted max-w-[24rem]">
+              <p className="text-body-sm text-muted max-w-panel">
                 Chat will be available once your research is complete and the
                 RAG backend is connected.
               </p>
