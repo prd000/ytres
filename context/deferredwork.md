@@ -2,6 +2,23 @@
 
 Things to be implemented later, deferred in favor of a working prototype, or that require the user to supply something (API keys, accounts, secrets). Alert the user whenever an item is added here.
 
+## Bug #3 fix — user action required: replace LangSmith API key on Render (added 2026-06-02)
+
+The worker logs confirmed `403 Forbidden` on every trace upload — the API key is revoked, rotated, or belongs to a different workspace than the `ytres` project you're watching.
+
+**Steps:**
+1. Open the LangSmith workspace that owns (or should own) the `ytres` project.
+   - Confirm the URL: `smith.langchain.com` = US; `eu.smith.langchain.com` = EU.
+2. Go to **Settings → API Keys → Create new key** (Personal Access Token `lsv2_pt_…` or Service key with trace-write permission).
+3. In **Render → ytres-worker → Environment**:
+   - Set `LANGCHAIN_API_KEY` to the new key — **no quotes, no trailing spaces**.
+   - If the workspace is EU, also add `LANGCHAIN_ENDPOINT=https://eu.api.smith.langchain.com`.
+4. **Redeploy** the worker. The startup log should now show `LangSmith OK — project=ytres …` instead of the `auth FAILED (403)` error.
+
+The code changes (configurable endpoint, `check_langsmith()` probe, `flush_traces()` on shutdown) are already deployed.
+
+---
+
 ## Manual Supabase dashboard config (user must do — code is ready, these make it take effect)
 
 Added 2026-06-01 alongside the `/auth/confirm` server-side email-confirmation handler. The route + `emailRedirectTo` wiring are in code, but Supabase's hosted-project settings (which `supabase/config.toml` does **not** control — that file only governs the local CLI stack) must be set in the dashboard:

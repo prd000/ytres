@@ -19,6 +19,7 @@ load_dotenv()
 from worker.log_config import setup_logging
 from worker.db import get_pool, close_pool
 from worker.loop import run
+from worker.observability import check_langsmith, flush_traces
 
 
 def _make_worker_id() -> str:
@@ -29,13 +30,9 @@ async def _main() -> None:
     setup_logging()
     log = logging.getLogger(__name__)
 
-    # LangSmith diagnostic — must be after setup_logging so it goes to the
-    # configured handler. Config exports LANGSMITH_ACTIVE based on key presence.
-    from worker.config import LANGSMITH_ACTIVE, LANGCHAIN_PROJECT
-    if LANGSMITH_ACTIVE:
-        log.info("LangSmith tracing: ACTIVE (project=%s)", LANGCHAIN_PROJECT)
-    else:
-        log.info("LangSmith tracing: INACTIVE (no API key — set LANGCHAIN_API_KEY to enable)")
+    # LangSmith auth probe — must be after setup_logging. Turns a silent 403 into
+    # one loud, explained ERROR line instead of per-job WARNING noise.
+    check_langsmith()
 
     worker_id = _make_worker_id()
     log.info("worker starting: %s", worker_id)
@@ -56,6 +53,7 @@ async def _main() -> None:
         await run(worker_id, cancel_event)
     finally:
         await close_pool()
+        await loop.run_in_executor(None, flush_traces)
         log.info("worker stopped: %s", worker_id)
 
 

@@ -17,6 +17,10 @@ context_ceiling_tokens = 100000  # self-imposed Pro-eval token ceiling per handl
 [observability]
 langchain_tracing = true
 langchain_project = "ytres"
+# US accounts: https://api.smith.langchain.com (default)
+# EU accounts: https://eu.api.smith.langchain.com
+# An env var LANGCHAIN_ENDPOINT overrides this without a config edit.
+langchain_endpoint = "https://api.smith.langchain.com"
 
 # ── Search ─────────────────────────────────────────────────────────────────────
 # Safe to commit — no secrets. Set provider API keys in .env / Render env vars.

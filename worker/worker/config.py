@@ -95,16 +95,24 @@ _langsmith_key: str | None = (
 _langchain_project: str = _obs.get("langchain_project", "ytres")
 _tracing_enabled: str = str(_obs.get("langchain_tracing", False)).lower()
 
+# Endpoint: operator env var takes precedence, then config.toml, then US default.
+# EU accounts must set LANGCHAIN_ENDPOINT=https://eu.api.smith.langchain.com in Render env.
+_endpoint: str = (
+    os.environ.get("LANGCHAIN_ENDPOINT")
+    or _obs.get("langchain_endpoint", "https://api.smith.langchain.com")
+)
+
 os.environ.setdefault("LANGCHAIN_TRACING_V2", _tracing_enabled)
 os.environ.setdefault("LANGSMITH_TRACING",    _tracing_enabled)
 os.environ.setdefault("LANGCHAIN_PROJECT",     _langchain_project)
-os.environ.setdefault("LANGCHAIN_ENDPOINT",   "https://api.smith.langchain.com")
-os.environ.setdefault("LANGSMITH_ENDPOINT",   "https://api.smith.langchain.com")
+os.environ.setdefault("LANGCHAIN_ENDPOINT",   _endpoint)
+os.environ.setdefault("LANGSMITH_ENDPOINT",   _endpoint)
 
 if _langsmith_key:
     os.environ.setdefault("LANGCHAIN_API_KEY", _langsmith_key)
     os.environ.setdefault("LANGSMITH_API_KEY", _langsmith_key)
 
-# Exported flag — read by main.py for the startup diagnostic log.
+# Exported — read by observability.py for the startup auth probe.
 LANGSMITH_ACTIVE: bool = bool(_langsmith_key)
 LANGCHAIN_PROJECT: str = _langchain_project
+LANGCHAIN_ENDPOINT: str = _endpoint

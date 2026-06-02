@@ -4,6 +4,33 @@ Newest-first. One entry per milestone or significant bug fix.
 
 ---
 
+## Bug #3: LangSmith tracing 403 — configurable endpoint + active auth probe (2026-06-02)
+
+**Root cause (confirmed from Render logs):** every trace upload returned `403 Forbidden` from `api.smith.langchain.com/runs/multipart`. Tracing was active and the key was loaded, but the key was revoked/rotated or belongs to a different workspace. The startup check only tested `bool(key)` and logged "ACTIVE" even when the key was rejected; the langsmith tracer downgraded the 403 to a buried per-job `WARNING`.
+
+**Code fixes:**
+- `config.toml [observability]` — added `langchain_endpoint` knob (default: US endpoint). An `LANGCHAIN_ENDPOINT` env var still overrides, so EU accounts can fix a region mismatch with a single Render env change and no config edit.
+- `worker/worker/config.py` — reads `langchain_endpoint` from config; uses it in `setdefault("LANGCHAIN_ENDPOINT", …)` and `setdefault("LANGSMITH_ENDPOINT", …)` (replaces hardcode). Exports `LANGCHAIN_ENDPOINT`.
+- `worker/worker/observability.py` (new) — `check_langsmith()`: if inactive, logs a `WARNING` with setup hint; if active, instantiates `langsmith.Client()` and calls `create_project` (idempotent — catches 409 conflict) to verify auth. On 403/401 logs an `ERROR` naming the three causes (revoked key, wrong workspace, EU/US region mismatch). `flush_traces()`: wraps `wait_for_all_tracers()` for clean shutdown.
+- `worker/worker/main.py` — startup ACTIVE/INACTIVE block replaced with `check_langsmith()`; `finally` block adds `await loop.run_in_executor(None, flush_traces)`.
+- `.env.example` — added commented `LANGCHAIN_ENDPOINT` line for EU accounts.
+
+**User action required:** rotate/replace `LANGCHAIN_API_KEY` in Render env — see `deferredwork.md`.
+
+---
+
+## Bug: DeepSeek json_mode "json" keyword + error visibility (2026-06-02)
+
+**Root cause:** DeepSeek's API requires the word "json" to appear somewhere in the prompt when using `response_format=json_object`. LangChain's `json_mode` path sets that API parameter but does NOT inject the word into raw message lists — it trusts the caller's prompt to contain it. The research handler's prompts already included explicit "Respond with a JSON object matching the X schema" lines; the report and coordinator handlers did not.
+
+**Fixes:**
+- `worker/worker/handlers/report.py` — `_build_auto_select_messages` and `_build_synthesis_messages` now include explicit JSON schema hints in the system message.
+- `worker/worker/handlers/coordinator.py` — `_build_messages` now includes the CoverageReview JSON schema hint.
+- `worker/worker/llm/factory.py` — added `_ensure_json_keyword()` safety-net: in the json_mode fallback path it checks for "json" in the messages and injects a schema description if absent, protecting all future handlers.
+- `worker/worker/loop.py` — error storage increased from 2000 → 8000 chars; log now emits the full traceback so the actual exception is visible in both Render logs and Supabase.
+
+---
+
 ## Bug: Error truncation fix (2026-06-01)
 `worker/worker/loop.py` — increased `last_error` storage from 2000 → 8000 chars and switched the error log from single-line to full traceback so the actual exception message is visible in Supabase and Render logs when a job fails.
 
