@@ -4,6 +4,12 @@ Newest-first. One entry per milestone or significant bug fix.
 
 ---
 
+## Phase 8 — Coordinator review + gap-fill (2026-06-01)
+Closes the research loop. New `coordinator_review` job type: after all `research_subtopic` jobs for a project finish, an in-process coordinator sweep (`_coordinator_sweep` in `loop.py`, every 10 s) calls the `enqueue_ready_coordinator_reviews()` SECURITY DEFINER RPC (migration `0011`). The RPC uses a transaction-level advisory lock + `NOT EXISTS` idempotency guards to enqueue exactly one review per wave (two-wave cap). The coordinator handler (`handlers/coordinator.py`) loads per-subtopic coverage (key takeaways + why-nothing reports), invokes the DeepSeek coordinator LLM against `CoverageReview` schema, then either spawns gap-fill subtopics + jobs (wave 1 only) or calls `complete_research()` (new SECURITY DEFINER RPC — sanctioned exception to Decision 4). New `subtopics.wave` column (0 = initial plan, 1 = gap-fill); Research tab renders a "Gap-fill" outline Badge for wave > 0 subtopics. `CoordinatorReviewPayload` + `CoverageReview` schemas added. 20 contract tests pass; coordinator + barrier integration tests written (live run pending — no local Supabase).
+
+## Bug: research_subtopic crash — dict-shaped search queries (2026-06-01)
+`SearchQuerySet.queries` is typed `list[str]`, but the query-gen model (prompted with source-tier preferences) intermittently returned each query as an object (`{"query": ..., "source_type": ...}`), failing Pydantic validation and killing the job — explaining why ~2/5 subtopic jobs failed while the rest succeeded. Fix: `field_validator(mode="before")` on `SearchQuerySet.queries` normalises either shape (string or `query`/`q`/`text`/`search_query` object, with first-string fallback) down to a plain query string. 2 regression tests added (`test_search_query_set_coerces_dict_queries`, `..._plain_strings_unchanged`).
+
 ## Phase 6 — Research pipeline (2026-06-01)
 Full `research_subtopic` worker handler: query gen → Brave/Tavily search → Pass-1 batch filter → extraction → Pass-2 per-source eval → store (≤12 sources, min-3 target, auto-retry wave, context-ceiling handoff). LangSmith tracing fixed (`load_dotenv` before worker imports; `LANGSMITH_ACTIVE` flag). `invoke_structured` lifted from planner into `factory.py` (shared). New `storage/activity.py` (upsert + status helper). `approvePlan` action bulk-enqueues one `research_subtopic` job per subtopic. Realtime subscriptions added for `worker_activity` + `sources`. 9 new tests; `ResearchSubtopicPayload` added to contract.
 

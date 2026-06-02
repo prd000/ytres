@@ -48,6 +48,19 @@ async def cancel_project_jobs(project_id: str) -> None:
     await pool.execute("select cancel_project_jobs($1::uuid)", project_id)
 
 
+async def enqueue_ready_coordinator_reviews() -> int:
+    """Call the barrier RPC; returns the number of coordinator_review jobs enqueued."""
+    pool = await get_pool()
+    row = await pool.fetchrow("select enqueue_ready_coordinator_reviews()")
+    return int(row[0]) if row else 0
+
+
+async def complete_research(project_id: str) -> None:
+    """Transition project status researching → complete via the SECURITY DEFINER RPC."""
+    pool = await get_pool()
+    await pool.execute("select complete_research($1::uuid)", project_id)
+
+
 async def enqueue_job(
     conn: asyncpg.Connection,
     project_id: str,

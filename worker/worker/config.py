@@ -54,9 +54,10 @@ POLL_INTERVAL: float      = _w["poll_interval"]
 # ── Heartbeat & stale-job reclaim ─────────────────────────────────────────────
 # HEARTBEAT_INTERVAL must be well under STALE_TIMEOUT_SECONDS (< half) so a
 # single missed heartbeat doesn't trigger reclaim.
-HEARTBEAT_INTERVAL: float  = _w["heartbeat_interval"]
-WATCHDOG_INTERVAL: float   = _w["watchdog_interval"]
-STALE_TIMEOUT_SECONDS: int = _w["stale_timeout_seconds"]
+HEARTBEAT_INTERVAL: float        = _w["heartbeat_interval"]
+WATCHDOG_INTERVAL: float         = _w["watchdog_interval"]
+STALE_TIMEOUT_SECONDS: int       = _w["stale_timeout_seconds"]
+COORDINATOR_SWEEP_INTERVAL: float = _w["coordinator_sweep_interval"]
 
 # ── Graceful shutdown ─────────────────────────────────────────────────────────
 # On SIGTERM/SIGINT the loop stops claiming and waits up to this many seconds

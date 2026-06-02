@@ -4,6 +4,16 @@ This file tracks architectural decisions and any deviations from the original PR
 
 ---
 
+## 2026-06-01 — Phase 8 architectural decisions
+
+**Decision 1 — Worker completes the project via `complete_research` SECURITY DEFINER RPC.**
+This is a sanctioned exception to Decision 4 (Phase 4+5) which states the worker never mutates `project.status`. The coordinator handler is the sole actor that moves a project from `researching → complete`; it does so via a `complete_research(p_project_id uuid)` SECURITY DEFINER function that guards with `WHERE status = 'researching'`, making it idempotent and race-safe. All other status transitions remain in web Server Actions as before.
+
+**Decision 2 — Fan-in barrier via in-process sweep + set-based SECURITY DEFINER RPC, not a DB trigger.**
+The coordinator sweep (`_coordinator_sweep` in `loop.py`) runs every `COORDINATOR_SWEEP_INTERVAL` seconds, calling `enqueue_ready_coordinator_reviews()`. This mirrors the existing `_watchdog` precedent and keeps orchestration visible in Python. The RPC uses a transaction-level advisory lock (`pg_advisory_xact_lock`) plus a `NOT EXISTS` idempotency predicate to handle concurrent worker instances safely. A unique partial index on `(project_id, payload->>'wave') WHERE type = 'coordinator_review'` is a defense-in-depth backstop. Accepted latency: completion lags by up to `coordinator_sweep_interval` (~10 s). Same limitation as the watchdog (accepted per 2026-05-31 decision).
+
+---
+
 ## 2026-06-01 — Phase 6 architectural decisions
 
 **Decision 1 — Two-pass evaluation with avg≥3 and no-dimension-==1 store rule.**

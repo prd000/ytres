@@ -24,6 +24,7 @@ from worker.config import (
     WATCHDOG_INTERVAL,
     STALE_TIMEOUT_SECONDS,
     GRACE_SHUTDOWN_SECONDS,
+    COORDINATOR_SWEEP_INTERVAL,
 )
 from worker.queue import (
     claim_job,
@@ -31,6 +32,7 @@ from worker.queue import (
     complete_job,
     fail_job,
     reclaim_stale_jobs,
+    enqueue_ready_coordinator_reviews,
 )
 from worker.handlers import HANDLERS
 
@@ -126,12 +128,26 @@ async def _watchdog(cancel_event: asyncio.Event) -> None:
             log.exception("watchdog error")
 
 
+async def _coordinator_sweep(cancel_event: asyncio.Event) -> None:
+    while not cancel_event.is_set():
+        await asyncio.sleep(COORDINATOR_SWEEP_INTERVAL)
+        if cancel_event.is_set():
+            break
+        try:
+            n = await enqueue_ready_coordinator_reviews()
+            if n:
+                log.info("coordinator sweep: enqueued %d review(s)", n)
+        except Exception:
+            log.exception("coordinator sweep error")
+
+
 async def run(worker_id: str, cancel_event: asyncio.Event) -> None:
     """Main loop — runs until cancel_event is set, then drains in-flight jobs."""
     semaphore = asyncio.Semaphore(WORKER_CONCURRENCY)
     in_flight: set[asyncio.Task] = set()
 
     watchdog_task = asyncio.create_task(_watchdog(cancel_event))
+    coordinator_sweep_task = asyncio.create_task(_coordinator_sweep(cancel_event))
 
     while not cancel_event.is_set():
         any_claimed = False
@@ -165,6 +181,7 @@ async def run(worker_id: str, cancel_event: asyncio.Event) -> None:
     # Graceful shutdown: stop claiming, drain within the grace window
     log.info("shutting down — draining %d in-flight jobs", len(in_flight))
     watchdog_task.cancel()
+    coordinator_sweep_task.cancel()
     if in_flight:
         done, pending = await asyncio.wait(in_flight, timeout=GRACE_SHUTDOWN_SECONDS)
         if pending:

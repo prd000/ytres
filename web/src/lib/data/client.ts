@@ -34,6 +34,7 @@ function mapSubtopic(row: any): Subtopic {
     sourceTierPreferences: row.source_tier_preferences,
     status: row.status,
     sortOrder: row.sort_order,
+    wave: row.wave ?? 0,
   };
 }
 

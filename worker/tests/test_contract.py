@@ -10,7 +10,14 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "shared"))
 
-from schemas.job_payloads import EchoPayload, GeneratePlanPayload, ResearchSubtopicPayload, WorkerActivityRow, JOB_PAYLOAD_MODELS
+from schemas.job_payloads import (
+    EchoPayload,
+    CoordinatorReviewPayload,
+    GeneratePlanPayload,
+    ResearchSubtopicPayload,
+    WorkerActivityRow,
+    JOB_PAYLOAD_MODELS,
+)
 
 
 def test_echo_payload_valid():
@@ -106,3 +113,30 @@ def test_research_subtopic_payload_missing_project_id_raises():
 def test_registry_has_research_subtopic():
     assert "research_subtopic" in JOB_PAYLOAD_MODELS
     assert JOB_PAYLOAD_MODELS["research_subtopic"] is ResearchSubtopicPayload
+
+
+def test_coordinator_review_payload_valid():
+    p = CoordinatorReviewPayload(project_id="proj-1", wave=1)
+    assert p.project_id == "proj-1"
+    assert p.wave == 1
+    assert p.progress is None
+
+
+def test_coordinator_review_payload_wave2():
+    p = CoordinatorReviewPayload(project_id="proj-1", wave=2)
+    assert p.wave == 2
+
+
+def test_coordinator_review_payload_missing_wave_raises():
+    with pytest.raises(ValidationError):
+        CoordinatorReviewPayload(project_id="proj-1")  # type: ignore[call-arg]
+
+
+def test_coordinator_review_payload_missing_project_id_raises():
+    with pytest.raises(ValidationError):
+        CoordinatorReviewPayload(wave=1)  # type: ignore[call-arg]
+
+
+def test_registry_has_coordinator_review():
+    assert "coordinator_review" in JOB_PAYLOAD_MODELS
+    assert JOB_PAYLOAD_MODELS["coordinator_review"] is CoordinatorReviewPayload

@@ -6,8 +6,8 @@ in migration 0009). ResearchPlan.subtopics has a 3–8 guardrail matching the PR
 budget constraint.
 """
 from __future__ import annotations
-from typing import Literal
-from pydantic import BaseModel, Field
+from typing import Any, Literal
+from pydantic import BaseModel, Field, field_validator
 
 SourceTier = Literal["academic", "government", "news", "industry", "social_media"]
 
@@ -25,8 +25,36 @@ class ResearchPlan(BaseModel):
 # ── Research pipeline schemas ─────────────────────────────────────────────────
 
 class SearchQuerySet(BaseModel):
-    """3–5 search queries generated for a subtopic."""
+    """3–5 search queries generated for a subtopic.
+
+    The model is prompted with source-tier preferences and intermittently returns
+    each query as an object (e.g. ``{"query": "...", "source_type": "news"}``)
+    instead of a bare string. The validator below normalises either shape down to
+    a plain query string so a richer-than-asked-for response doesn't fail the job.
+    """
     queries: list[str] = Field(min_length=3, max_length=5)
+
+    @field_validator("queries", mode="before")
+    @classmethod
+    def _coerce_query_items(cls, value: Any) -> Any:
+        if not isinstance(value, list):
+            return value
+
+        def _to_query_str(item: Any) -> Any:
+            if isinstance(item, str):
+                return item
+            if isinstance(item, dict):
+                # Accept the common "query"/"q"/"text"/"search_query" object shapes;
+                # fall back to the first string value so we never silently drop a query.
+                for key in ("query", "q", "text", "search_query"):
+                    if isinstance(item.get(key), str):
+                        return item[key]
+                for v in item.values():
+                    if isinstance(v, str):
+                        return v
+            return item  # leave anything unexpected for Pydantic to reject
+
+        return [_to_query_str(item) for item in value]
 
 
 class Pass1Item(BaseModel):
@@ -51,3 +79,15 @@ class SourceEvaluation(BaseModel):
     score_uniqueness: int = Field(ge=1, le=5)
     score_actionability: int = Field(ge=1, le=5)
     key_takeaway: str
+
+
+class CoverageReview(BaseModel):
+    """Coordinator's coverage assessment after a research wave.
+
+    Reuses PlannedSubtopic for gap_subtopics so the subtopic INSERT path is identical.
+    On wave 1: is_complete=False + gap_subtopics triggers one gap-fill round.
+    On wave 2: gap_subtopics is structurally ignored — project always completes.
+    """
+    is_complete: bool
+    summary: str
+    gap_subtopics: list[PlannedSubtopic] = Field(default_factory=list, max_length=3)

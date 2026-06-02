@@ -30,6 +30,7 @@ export interface Subtopic {
   sourceTierPreferences: SourceTier[];
   status: SubtopicStatus;
   sortOrder: number;
+  wave: number;
 }
 
 export interface SourceScores {

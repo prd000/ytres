@@ -1,4 +1,5 @@
 import { PageContainer } from "@/components/layout/PageContainer";
+import { Badge } from "@/components/ui/Badge";
 import { Callout } from "@/components/ui/Callout";
 import type { Project, Subtopic, WorkerActivity } from "@/lib/data/types";
 
@@ -56,7 +57,10 @@ export function ResearchTab({ project, subtopics, activity }: ResearchTabProps) 
             return (
               <div key={sub.id} className="bg-surface-card rounded-lg p-5 border border-hairline-soft">
                 <div className="flex items-start justify-between gap-4 mb-3">
-                  <p className="text-title-sm text-ink">{sub.title}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-title-sm text-ink">{sub.title}</p>
+                    {sub.wave > 0 && <Badge variant="outline">Gap-fill</Badge>}
+                  </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span className={`w-2 h-2 rounded-full ${a ? STATUS_DOT[a.status] : STATUS_DOT.queued}`} />
                     <span className="text-caption text-muted">

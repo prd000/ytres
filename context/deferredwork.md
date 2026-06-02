@@ -151,6 +151,22 @@ Implemented and statically verified. The following require a live stack to confi
 
 Add `LANGCHAIN_API_KEY` to `worker/.env` and Render env vars before deploying Phase 6.
 
+## Phase 8 user actions required (added 2026-06-01)
+
+1. **Apply migration 0011** to live Supabase before Phase 8 runs:
+   ```
+   supabase db push
+   ```
+   Confirms: `subtopics.wave` column exists, `enqueue_ready_coordinator_reviews()` + `complete_research()` RPCs exist, `jobs_review_wave_uniq` partial index exists.
+
+2. **Barrier/RPC integration tests** (`test_barrier.py`) — verified statically; live run pending (no local Supabase on this machine). Run after migration 0011 is applied.
+
+3. **Coordinator handler tests** (`test_coordinator.py`) — DB-integrated but LLM + `complete_research` are mocked. Run after migration 0011 is applied.
+
+4. **Single gap-fill round enforced by two-wave cap** — lifting to 3+ waves requires incrementing the `rev.next_wave <= 2` guard in the `enqueue_ready_coordinator_reviews()` RPC.
+
+5. **Pre-existing `test_planner.py` `_invoke_structured` mis-patch** — `test_planner.py` patches `planner_module._invoke_structured` (an attribute that doesn't exist; the real function is `invoke_structured` imported bare). The tests pass because `monkeypatch.setattr` on a missing attribute creates it, but the actual production `invoke_structured` is not intercepted — the planner tests make real LLM calls if DEEPSEEK_API_KEY is set, or hit the mock only if the attribute happens to shadow the import. Logged here as a separate pre-existing cleanup item, out of scope for Phase 8.
+
 ## Open questions to resolve
 
 - _(resolved 2026-05-29)_ ~~DeepSeek "V4 Pro" / "Flash" model IDs~~ — confirmed real: `deepseek-v4-pro` and `deepseek-v4-flash`, both 1M-token context. The 100K handoff ceiling is a self-imposed cost/quality cap, not a model limit.

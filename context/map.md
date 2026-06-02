@@ -17,7 +17,7 @@ A map of the project codebase — one line per file with its purpose. Update whe
 
 ## `agent/` — Active planning artifacts
 
-_(no active plans — all phases through 6 complete)_
+_(no active plans — all phases through 8 complete)_
 
 ## `agent-complete/` — Completed planning artifacts
 
@@ -28,6 +28,7 @@ _(no active plans — all phases through 6 complete)_
 | `phase-3-plan.md` | Phase 3 implementation plan — search infrastructure: web providers, Semantic Scholar, extraction chain, router (complete) |
 | `phase-4-5-plan.md` | Phase 4+5 implementation plan — storage/embeddings + planner + Realtime + social_media tier (complete) |
 | `phase-6-plan.md` | Phase 6 implementation plan — worker research pipeline, LangSmith fix, live Research tab (complete) |
+| `phase-8-plan.md` | Phase 8 implementation plan — coordinator review, gap-fill, complete_research RPC, barrier sweep (complete) |
 
 ---
 
@@ -46,6 +47,7 @@ _(no active plans — all phases through 6 complete)_
 | `migrations/0008_match_chunks.sql` | `match_chunks()` SQL function — hybrid vector+keyword search via Reciprocal Rank Fusion |
 | `migrations/0009_social_media_tier.sql` | `ALTER TYPE source_tier ADD VALUE 'social_media'` |
 | `migrations/0010_fix_projects_select_returning.sql` | Bug #1 fix — `projects_select` checks `owner_id = auth.uid()` directly (plus `can_access_project(id)` for members) so `INSERT … RETURNING` (create-project) passes the SELECT policy |
+| `migrations/0011_coordinator_review.sql` | Phase 8 — `subtopics.wave` column; `enqueue_ready_coordinator_reviews()` barrier RPC (advisory lock + NOT EXISTS idempotency); `jobs_review_wave_uniq` partial unique index; `complete_research()` status-transition RPC |
 
 ---
 
@@ -66,6 +68,7 @@ _(no active plans — all phases through 6 complete)_
 | `handlers/echo.py` | Phase 1 proof-of-concept handler: checkpoints through steps, echoes payload.message, completes |
 | `handlers/planner.py` | Phase 5 planner handler (job type `generate_plan`): reads project, calls DeepSeek coordinator, writes subtopics in transaction |
 | `handlers/research.py` | Phase 6 research handler (job type `research_subtopic`): full pipeline — query gen → search → pass-1 filter → extraction → pass-2 eval → store with embeddings. Supports checkpointing, context-window handoff, source cap (12), auto-retry, why-nothing report, cancellation. |
+| `handlers/coordinator.py` | Phase 8 coordinator handler (job type `coordinator_review`): loads coverage data, invokes LLM for CoverageReview, either spawns gap-fill subtopics+jobs (wave 1 w/gaps) or calls complete_research() |
 
 ### `worker/worker/llm/` — Phase 5 LLM layer
 
@@ -74,7 +77,7 @@ _(no active plans — all phases through 6 complete)_
 | `__init__.py` | Package marker |
 | `config.py` | Frozen `LLMConfig` dataclass + `from_env()` reading `config.toml [llm]` + env (no DB dep) |
 | `factory.py` | `build_chat_model(cfg, role)` — returns `ChatOpenAI` pointed at DeepSeek base_url; provider swap = config edit |
-| `schemas.py` | Structured-output Pydantic models: `SourceTier`, `PlannedSubtopic`, `ResearchPlan` (3–8 subtopics guardrail) |
+| `schemas.py` | Structured-output Pydantic models: `SourceTier`, `PlannedSubtopic`, `ResearchPlan` (3–8 subtopics guardrail), `CoverageReview` (Phase 8 coordinator output) |
 
 ### `worker/worker/storage/` — Phase 4 storage & embeddings
 
@@ -129,6 +132,8 @@ _(no active plans — all phases through 6 complete)_
 | `test_hybrid_search.py` | Integration: vector-near ranks high, keyword surfaces, project scoping, match_count limit, scores descending |
 | `test_planner.py` | Mocked LLM: subtopic count/order/enum-array, regenerate, idempotent, cancel pre/post-LLM, status unchanged |
 | `test_research.py` | Mocked LLM + router + embedder + extraction + DB: store rule pass/fail, source cap (12), min-target triggers second wave, why-nothing, pre/post-LLM cancel, handoff enqueues continuation, resume skips processed URLs, activity upsert sequence |
+| `test_coordinator.py` | Mocked LLM + real DB: wave1-gaps inserts subtopics+jobs, wave1-nogaps calls complete_research, wave2 always completes, pre/post-LLM cancel, non-researching skip, _load_coverage assembly |
+| `test_barrier.py` | Real Postgres via `db` fixture (migration 0011 required): barrier enqueues wave1, idempotent, waits while in-flight, fires on all-failed, skips cancelled, wave2 after gap-fill, no wave3, complete_research transitions/noop |
 
 | Root file | Purpose |
 |---|---|
@@ -141,7 +146,7 @@ _(no active plans — all phases through 6 complete)_
 | File | Purpose |
 |---|---|
 | `schemas/__init__.py` | Package marker |
-| `schemas/job_payloads.py` | Pydantic models: EchoPayload, GeneratePlanPayload, ResearchSubtopicPayload, WorkerActivityRow, JOB_PAYLOAD_MODELS registry |
+| `schemas/job_payloads.py` | Pydantic models: EchoPayload, GeneratePlanPayload, ResearchSubtopicPayload, CoordinatorReviewPayload, WorkerActivityRow, JOB_PAYLOAD_MODELS registry |
 
 ---
 
