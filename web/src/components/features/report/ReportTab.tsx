@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { ReportPreview } from "@/components/features/report/ReportPreview";
 import { SourceSelector } from "@/components/features/report/SourceSelector";
 import { Button } from "@/components/ui/Button";
-import { Callout } from "@/components/ui/Callout";
+import { generateReport } from "@/app/(app)/project/[id]/report/actions";
 import type { Project, Source, Report } from "@/lib/data/types";
 
 const SOURCE_CAP = 25;
@@ -16,11 +16,24 @@ interface ReportTabProps {
   existingReport: Report | null;
 }
 
-export function ReportTab({ project: _project, sources, existingReport }: ReportTabProps) {
+export function ReportTab({ project, sources, existingReport }: ReportTabProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(
     new Set(existingReport?.sourceRefs ?? [])
   );
-  const report = existingReport;
+  const [instructions, setInstructions] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  // Clear generating state when a new report arrives via Realtime → router.refresh()
+  const prevReportId = useRef<string | undefined>(existingReport?.id);
+  useEffect(() => {
+    if (existingReport?.id && existingReport.id !== prevReportId.current) {
+      prevReportId.current = existingReport.id;
+      setIsGenerating(false);
+      setError(null);
+    }
+  }, [existingReport?.id]);
 
   function toggleSource(id: string) {
     setSelectedIds((prev) => {
@@ -48,8 +61,8 @@ export function ReportTab({ project: _project, sources, existingReport }: Report
   }
 
   function handleDownload() {
-    if (!report) return;
-    const blob = new Blob([report.markdown], { type: "text/markdown" });
+    if (!existingReport) return;
+    const blob = new Blob([existingReport.markdown], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -58,11 +71,29 @@ export function ReportTab({ project: _project, sources, existingReport }: Report
     URL.revokeObjectURL(url);
   }
 
+  function handleGenerate(mode: "curated" | "auto") {
+    setError(null);
+    startTransition(async () => {
+      const result = await generateReport(project.id, {
+        mode,
+        sourceIds: mode === "curated" ? [...selectedIds] : [],
+        instructions: instructions.trim() || undefined,
+      });
+      if (result?.error) {
+        setError(result.error);
+      } else {
+        setIsGenerating(true);
+      }
+    });
+  }
+
+  const busy = isPending || isGenerating;
+
   return (
     <div className="py-10">
       <PageContainer>
         <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-8">
-          {/* Left: source selection */}
+          {/* Left: source selection + controls */}
           <aside>
             <div className="lg:sticky lg:top-24">
               <div className="flex items-baseline justify-between gap-3 mb-1">
@@ -72,6 +103,7 @@ export function ReportTab({ project: _project, sources, existingReport }: Report
                     variant="text"
                     size="sm"
                     onClick={toggleSelectAll}
+                    disabled={busy}
                     className="px-0 h-auto shrink-0"
                   >
                     {allSelected ? "Deselect all" : "Select all"}
@@ -91,43 +123,84 @@ export function ReportTab({ project: _project, sources, existingReport }: Report
                 />
               )}
 
-              <div className="flex flex-col gap-2 mt-5">
-                <button
-                  disabled
-                  className="w-full h-10 text-button bg-primary-disabled text-muted rounded-md cursor-not-allowed"
+              {/* Optional instructions */}
+              <div className="mt-5">
+                <label className="text-body-sm text-muted block mb-1">
+                  Instructions (optional)
+                </label>
+                <textarea
+                  value={instructions}
+                  onChange={(e) => setInstructions(e.target.value)}
+                  disabled={busy}
+                  placeholder="Tone, audience, focus area…"
+                  rows={3}
+                  className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-body-sm text-ink placeholder:text-muted-soft resize-none focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
+                />
+              </div>
+
+              {error && (
+                <p className="mt-3 text-body-sm text-error">{error}</p>
+              )}
+
+              <div className="flex flex-col gap-2 mt-4">
+                <Button
+                  variant="primary"
+                  onClick={() => handleGenerate("curated")}
+                  disabled={busy || selectedIds.size === 0}
+                  className="w-full"
                 >
-                  Generate report
-                </button>
-                {report && (
-                  <button
+                  {busy ? "Generating…" : "Generate report"}
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => handleGenerate("auto")}
+                  disabled={busy || sources.length === 0}
+                  className="w-full"
+                >
+                  Auto-draft
+                </Button>
+                {existingReport && (
+                  <Button
+                    variant="secondary"
                     onClick={handleDownload}
-                    className="w-full h-10 text-button text-ink border border-hairline rounded-md hover:bg-surface-soft transition-colors"
+                    disabled={busy}
+                    className="w-full"
                   >
                     Download .md
-                  </button>
+                  </Button>
                 )}
               </div>
 
-              <Callout variant="warning" className="mt-4">
-                Report generation arrives in Phase 10 when the coordinator
-                agent is connected.
-              </Callout>
-
-              <Callout variant="warning" className="mt-2">
+              <p className="text-caption text-muted mt-3">
                 PDF export coming in a later phase.
-              </Callout>
+              </p>
             </div>
           </aside>
 
           {/* Right: preview */}
           <div>
-            {report ? (
-              <ReportPreview markdown={report.markdown} />
+            {isGenerating && !existingReport ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center text-muted border border-dashed border-hairline rounded-lg">
+                <p className="text-title-sm text-ink mb-2">Generating report…</p>
+                <p className="text-body-sm">
+                  The AI is synthesizing your sources. This usually takes under a minute.
+                </p>
+              </div>
+            ) : existingReport ? (
+              <>
+                {isGenerating && (
+                  <p className="text-body-sm text-muted mb-4">
+                    Generating a new version…
+                  </p>
+                )}
+                <ReportPreview markdown={existingReport.markdown} />
+              </>
             ) : (
               <div className="flex flex-col items-center justify-center py-20 text-center text-muted border border-dashed border-hairline rounded-lg">
                 <p className="text-title-sm text-ink mb-2">No report yet</p>
                 <p className="text-body-sm">
-                  Reports are generated by the AI coordinator agent in Phase 10.
+                  Select sources and click <strong>Generate report</strong>, or use{" "}
+                  <strong>Auto-draft</strong> to let the AI choose.
                 </p>
               </div>
             )}

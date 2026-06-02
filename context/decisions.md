@@ -4,6 +4,22 @@ This file tracks architectural decisions and any deviations from the original PR
 
 ---
 
+## 2026-06-01 — Phase 10 architectural decisions
+
+**Decision 1 — Reports pulled ahead of Phase 9 (RAG Chatbot).**
+Phase 10 (Reports) was built before Phase 9 (RAG Chatbot). Reports depends only on Phase 4 (storage) and Phase 6 (stored sources) — both complete — and has no dependency on the chatbot. RAG Chatbot becomes the next phase.
+
+**Decision 2 — Report generation runs as a job (async, not streamed).**
+Per PRD §Report Synthesis. The worker handler inserts a `reports` row; Realtime delivers it to the open browser tab. No streaming, no server-sent events. Consistent with the two-plane architecture.
+
+**Decision 3 — Markdown-only output this phase; PDF deferred.**
+PDF export requires a server-side renderer (Puppeteer / @react-pdf / headless Chrome). Deferred to a later phase; recorded in `deferredwork.md`.
+
+**Decision 4 — Both curated and auto-draft modes ship in this phase.**
+Curated: user selects sources in the UI (server-side cap enforced). Auto-draft: LLM (`AutoDraftSelection`) picks the top ≤25 from all stored sources. Server-side cap applied after LLM response (never trust the client cap alone).
+
+---
+
 ## 2026-06-01 — Phase 8 architectural decisions
 
 **Decision 1 — Worker completes the project via `complete_research` SECURITY DEFINER RPC.**

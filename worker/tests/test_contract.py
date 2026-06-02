@@ -14,6 +14,7 @@ from schemas.job_payloads import (
     EchoPayload,
     CoordinatorReviewPayload,
     GeneratePlanPayload,
+    GenerateReportPayload,
     ResearchSubtopicPayload,
     WorkerActivityRow,
     JOB_PAYLOAD_MODELS,
@@ -140,3 +141,43 @@ def test_coordinator_review_payload_missing_project_id_raises():
 def test_registry_has_coordinator_review():
     assert "coordinator_review" in JOB_PAYLOAD_MODELS
     assert JOB_PAYLOAD_MODELS["coordinator_review"] is CoordinatorReviewPayload
+
+
+def test_generate_report_payload_curated():
+    p = GenerateReportPayload(project_id="proj-1", mode="curated", source_ids=["id-1", "id-2"])
+    assert p.project_id == "proj-1"
+    assert p.mode == "curated"
+    assert p.source_ids == ["id-1", "id-2"]
+    assert p.instructions is None
+    assert p.progress is None
+
+
+def test_generate_report_payload_auto():
+    p = GenerateReportPayload(project_id="proj-1", mode="auto")
+    assert p.mode == "auto"
+    assert p.source_ids == []
+
+
+def test_generate_report_payload_with_instructions():
+    p = GenerateReportPayload(project_id="proj-1", mode="curated", instructions="Focus on policy.")
+    assert p.instructions == "Focus on policy."
+
+
+def test_generate_report_payload_missing_project_id_raises():
+    with pytest.raises(ValidationError):
+        GenerateReportPayload(mode="curated")  # type: ignore[call-arg]
+
+
+def test_generate_report_payload_missing_mode_raises():
+    with pytest.raises(ValidationError):
+        GenerateReportPayload(project_id="proj-1")  # type: ignore[call-arg]
+
+
+def test_generate_report_payload_invalid_mode_raises():
+    with pytest.raises(ValidationError):
+        GenerateReportPayload(project_id="proj-1", mode="manual")  # type: ignore[arg-type]
+
+
+def test_registry_has_generate_report():
+    assert "generate_report" in JOB_PAYLOAD_MODELS
+    assert JOB_PAYLOAD_MODELS["generate_report"] is GenerateReportPayload

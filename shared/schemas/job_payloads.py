@@ -40,12 +40,22 @@ class CoordinatorReviewPayload(BaseModel):
     progress: str | None = None
 
 
+class GenerateReportPayload(BaseModel):
+    """Payload for the 'generate_report' job type (Phase 10 reports)."""
+    project_id: str
+    mode: Literal["curated", "auto"]
+    source_ids: list[str] = []          # curated: user selection; auto: ignored
+    instructions: str | None = None     # optional tone/audience/focus
+    progress: str | None = None
+
+
 # Registry mapping job type names to their payload model.
 JOB_PAYLOAD_MODELS: dict[str, type[BaseModel]] = {
     "echo": EchoPayload,
     "generate_plan": GeneratePlanPayload,
     "research_subtopic": ResearchSubtopicPayload,
     "coordinator_review": CoordinatorReviewPayload,
+    "generate_report": GenerateReportPayload,
 }
 
 

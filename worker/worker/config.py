@@ -42,6 +42,7 @@ with open(_cfg_path, "rb") as _f:
 _w   = _cfg["worker"]
 _obs = _cfg.get("observability", {})
 _res = _cfg.get("research", {})
+_rep = _cfg.get("report", {})
 
 # ── Database ──────────────────────────────────────────────────────────────────
 # Direct asyncpg connection string (bypasses RLS by design — trusted server).
@@ -69,6 +70,10 @@ GRACE_SHUTDOWN_SECONDS: float = _w["grace_shutdown_seconds"]
 # Before an eval that would push past this, the handler enqueues a continuation
 # job and exits cleanly — tunable without a code deploy.
 CONTEXT_CEILING_TOKENS: int = _res.get("context_ceiling_tokens", 100_000)
+
+# ── Report generation ──────────────────────────────────────────────────────────
+REPORT_SOURCE_CAP: int   = _rep.get("report_source_cap", 25)
+REPORT_SOURCE_CHARS: int = _rep.get("report_source_chars", 4000)
 
 # ── Search provider keys (optional — keyless Semantic Scholar + trafilatura path
 # works without them; keys are only required to use Brave/Tavily/Jina) ─────────

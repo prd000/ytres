@@ -4,6 +4,27 @@ Newest-first. One entry per milestone or significant bug fix.
 
 ---
 
+## Phase 10 — Reports (2026-06-01)
+
+Full report-generation pipeline. Both **curated** and **auto-draft** modes ship. Backend-first per CLAUDE.md.
+
+**Backend:**
+- Migration `0012_report_realtime.sql` — adds `reports` to `supabase_realtime` publication so INSERT events reach the open tab.
+- `shared/schemas/job_payloads.py` — `GenerateReportPayload` (`mode: Literal["curated","auto"]`, `source_ids`, `instructions`) added + registered in `JOB_PAYLOAD_MODELS`.
+- `worker/worker/llm/schemas.py` — `AutoDraftSelection` (LLM picks top ≤25 source IDs) + `ReportDraft` (markdown + `source_ids_used`) added.
+- `config.toml [report]` — `report_source_cap = 25`, `report_source_chars = 4000` tunable in config; no code deploy needed to adjust.
+- `worker/worker/config.py` — reads `[report]` section, exports `REPORT_SOURCE_CAP` + `REPORT_SOURCE_CHARS`.
+- `worker/worker/handlers/report.py` — `generate_report` handler: loads project, selects sources (server-side cap enforced on both modes), loads full rows with truncated full_text, invokes `ReportDraft`, validates `source_ids_used ⊆ provided set` (drops hallucinated IDs with a warning), inserts `reports` row. Realtime delivers it to the open tab. No project-status change.
+- `worker/worker/handlers/__init__.py` — registered `generate_report`.
+- `worker/tests/test_report.py` — 7 new mocked tests: server-side cap (curated + auto), hallucinated ID drop, source_refs correctness, project isolation, pre/post-LLM cancellation. All pass.
+- `worker/tests/test_contract.py` — 7 new `GenerateReportPayload` round-trip tests. All 27 contract tests pass.
+
+**Frontend:**
+- `web/src/app/(app)/project/[id]/report/actions.ts` — `generateReport` Server Action: auth check, inserts `generate_report` job, `revalidatePath`.
+- `web/src/components/features/realtime/ReportRealtime.tsx` — `"use client"` Supabase Realtime subscription on `reports` INSERT for this project; calls `router.refresh()`.
+- `web/src/app/(app)/project/[id]/report/page.tsx` — mounts `<ReportRealtime>` alongside `<ReportTab>`.
+- `web/src/components/features/report/ReportTab.tsx` — Generate report (curated, ≥1 required), Auto-draft (LLM selects), optional instructions textarea, "Generating…" pending state, cleared when new report arrives via Realtime. Two "Phase 10" warning Callouts removed.
+
 ## Feature: "Select all" sources for report (2026-06-01)
 Bug-corrections #2. Added a `Select all` / `Deselect all` toggle (Button `text` variant, `sm`) to the Report tab source selector header (`report/ReportTab.tsx`). "Select all" caps at `SOURCE_CAP` (25) — selecting the first 25 when more sources exist; the button flips to "Deselect all" once every selectable slot is filled. Reuses the existing `selectedIds` Set + cap logic; `SourceSelector.tsx` unchanged.
 

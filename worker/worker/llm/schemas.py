@@ -91,3 +91,21 @@ class CoverageReview(BaseModel):
     is_complete: bool
     summary: str
     gap_subtopics: list[PlannedSubtopic] = Field(default_factory=list, max_length=3)
+
+
+# ── Report generation schemas ─────────────────────────────────────────────────
+
+class AutoDraftSelection(BaseModel):
+    """Auto-draft mode: LLM picks the top sources to include (<=25)."""
+    selected_source_ids: list[str]
+
+
+class ReportDraft(BaseModel):
+    """Report synthesis output.
+
+    markdown: full report with inline citations as markdown links to source URLs
+              and a References section at the end.
+    source_ids_used: which source IDs were actually cited (stored as source_refs).
+    """
+    markdown: str
+    source_ids_used: list[str]

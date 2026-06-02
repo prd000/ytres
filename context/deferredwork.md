@@ -47,7 +47,7 @@ These are required before the corresponding phase can run for real. None are wir
 | Research worker activity | **Live** — real Supabase `worker_activity` table | |
 | Sources by subtopic | **Live** — real Supabase `sources` + `source_subtopics` join | |
 | Chat messages + citations | **Live** reads, **UI disabled** — composer + Send locked; Callout shown | Connect RAG backend (Phase 9) to re-enable |
-| Report generation | **UI disabled** — Generate button locked; Callout shown | Connect coordinator agent (Phase 10) to re-enable |
+| Report generation | **Live** — Generate report + Auto-draft wired; Realtime delivers new report row | Requires migration 0012 + `reports` Realtime enabled in Supabase dashboard |
 | Report download | **Live** — Download .md functional for any real `reports` row | |
 
 ## Font substitution (pre-acknowledged in DESIGN.md)
@@ -60,7 +60,21 @@ These are not a bug — they are pre-acknowledged Known Gaps in `DESIGN.md`. Rep
 
 ## PDF export (Report tab)
 
-The Report tab's "Download .md" button is wired client-side. PDF export is stubbed/disabled — listed as a later-phase feature. Implement in Phase 10 using a server-side PDF generation library (e.g. Puppeteer, @react-pdf/renderer, or a headless Chrome endpoint on Render).
+The Report tab's "Download .md" button is wired client-side. PDF export is deferred — the server-side renderer (Puppeteer / @react-pdf/renderer / headless Chrome on Render) was out of scope for Phase 10. Implement in a later phase.
+
+## Phase 10 user actions required (added 2026-06-01)
+
+1. **Apply migration 0012** (`0012_report_realtime.sql`) to live Supabase:
+   ```
+   supabase db push
+   ```
+   or apply directly over `SUPABASE_DB_URL`:
+   ```sql
+   alter publication supabase_realtime add table reports;
+   ```
+   Statement is idempotent — safe to re-apply.
+
+2. **Enable `reports` Realtime in the Supabase dashboard** — go to Database → Replication, verify `reports` appears in the publication. Without this step, generated reports won't appear in the open tab until a manual refresh.
 
 ## Phase 1 user actions required (added 2026-05-31)
 
