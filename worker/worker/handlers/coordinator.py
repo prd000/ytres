@@ -105,7 +105,9 @@ def _build_messages(
         "For each subtopic you will see its status, the number of sources stored, "
         "and key takeaways from stored sources (or a why-nothing report if none were found).\n\n"
         f"{gap_instruction}\n\n"
-        "Write a concise summary (2–4 sentences) of overall coverage quality."
+        "Write a concise summary (2–4 sentences) of overall coverage quality.\n\n"
+        "Respond with a JSON object matching the CoverageReview schema: "
+        '{"is_complete": <bool>, "summary": "<str>", "gap_subtopics": [...]}'
     )
 
     user = (

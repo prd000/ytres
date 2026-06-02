@@ -18,6 +18,34 @@ from worker.llm.config import LLMConfig
 log = logging.getLogger(__name__)
 
 
+def _ensure_json_keyword(messages: list, schema) -> list:
+    """DeepSeek requires the word 'json' in the prompt when response_format=json_object.
+
+    LangChain's json_mode sets that API parameter but does NOT inject 'json' into
+    the raw message list. This helper adds a one-line schema hint to the system
+    message so DeepSeek accepts the request.
+    """
+    all_text = " ".join(
+        str(m[1]) if isinstance(m, tuple) else str(getattr(m, "content", m))
+        for m in messages
+    )
+    if "json" in all_text.lower():
+        return messages  # already compliant
+
+    try:
+        hint = str(schema.model_json_schema())
+        instruction = f"Respond with a JSON object matching this schema: {hint}"
+    except Exception:
+        instruction = "Respond with a JSON object."
+
+    result = list(messages)
+    for i, msg in enumerate(result):
+        if isinstance(msg, tuple) and msg[0] == "system":
+            result[i] = (msg[0], msg[1] + f"\n\n{instruction}")
+            return result
+    return [("system", instruction), *result]
+
+
 def build_chat_model(
     cfg: LLMConfig,
     role: str,
@@ -55,5 +83,7 @@ async def invoke_structured(llm: BaseChatModel, schema, messages, run_name: str)
         if any(kw in err_lower for kw in ("tool", "function", "not support", "does not support")):
             log.info("function_calling not supported by provider, retrying with json_mode")
             chain = llm.with_structured_output(schema, method="json_mode")
-            return await chain.with_config({"run_name": run_name}).ainvoke(messages)
+            return await chain.with_config({"run_name": run_name}).ainvoke(
+                _ensure_json_keyword(messages, schema)
+            )
         raise

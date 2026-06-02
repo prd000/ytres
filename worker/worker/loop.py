@@ -104,8 +104,8 @@ async def _process_job(
         log.info("job %s (%s) completed", job_id, job_type)
     except Exception as exc:
         error_detail = traceback.format_exc()
-        log.error("job %s (%s) failed: %s", job_id, job_type, exc)
-        await fail_job(job_id, error_detail[:2000])
+        log.error("job %s (%s) failed:\n%s", job_id, job_type, error_detail)
+        await fail_job(job_id, error_detail[:8000])
     finally:
         job_cancel_event.set()
         heartbeat_task.cancel()

@@ -3,5 +3,7 @@
 
 2. I want a "select all" button when selecting sources for the report
 
+3. LangSmith tracing isn't working, none of the LLM calls are showing up in LangSmith. Ask the user for additional information if you need it
+
 # Major Features to add
 1. I want to have a stress test feature where we take a report that's been built and then go try to find disproving evidence. I want to have two modes for this: One where it's entirely the LLM making the decision about what questions to ask and what things to poke holes in, and another where it's me, the user, deciding what questions to ask and what things to poke holes in.

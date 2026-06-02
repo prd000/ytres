@@ -39,7 +39,8 @@ def _build_auto_select_messages(sources: list[dict], cap: int) -> list:
     system = (
         f"You are a research editor. Select up to {cap} sources that together provide "
         "the broadest, highest-quality coverage of the research question. "
-        "Return their IDs in selected_source_ids."
+        "Respond with a JSON object matching the AutoDraftSelection schema: "
+        '{"selected_source_ids": ["<id>", ...]}'
     )
     user = f"Available sources:\n{source_lines}"
     return [("system", system), ("human", user)]
@@ -68,8 +69,8 @@ def _build_synthesis_messages(
         "- Use inline citations as markdown links: [Author/Title](URL)\n"
         "- Include a ## References section at the end listing all cited sources\n"
         "- Only cite sources from the provided list\n"
-        "- Return the full markdown in the `markdown` field\n"
-        "- Return the IDs of sources you actually cited in `source_ids_used`"
+        "Respond with a JSON object matching the ReportDraft schema: "
+        '{"markdown": "<full report>", "source_ids_used": ["<id>", ...]}'
         f"{instruction_note}"
     )
     user = f"Research question: {research_question}\n\nSources:\n\n{sources_text}"

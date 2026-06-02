@@ -4,6 +4,11 @@ Newest-first. One entry per milestone or significant bug fix.
 
 ---
 
+## Bug: Error truncation fix (2026-06-01)
+`worker/worker/loop.py` — increased `last_error` storage from 2000 → 8000 chars and switched the error log from single-line to full traceback so the actual exception message is visible in Supabase and Render logs when a job fails.
+
+---
+
 ## Phase 10 — Reports (2026-06-01)
 
 Full report-generation pipeline. Both **curated** and **auto-draft** modes ship. Backend-first per CLAUDE.md.
