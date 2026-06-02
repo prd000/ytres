@@ -43,6 +43,7 @@ _w   = _cfg["worker"]
 _obs = _cfg.get("observability", {})
 _res = _cfg.get("research", {})
 _rep = _cfg.get("report", {})
+_cht = _cfg.get("chat", {})
 
 # ── Database ──────────────────────────────────────────────────────────────────
 # Direct asyncpg connection string (bypasses RLS by design — trusted server).
@@ -74,6 +75,10 @@ CONTEXT_CEILING_TOKENS: int = _res.get("context_ceiling_tokens", 100_000)
 # ── Report generation ──────────────────────────────────────────────────────────
 REPORT_SOURCE_CAP: int   = _rep.get("report_source_cap", 25)
 REPORT_SOURCE_CHARS: int = _rep.get("report_source_chars", 4000)
+
+# ── RAG chat ───────────────────────────────────────────────────────────────────
+CHAT_MATCH_COUNT: int  = _cht.get("chat_match_count", 12)
+CHAT_CHUNK_CHARS: int  = _cht.get("chat_chunk_chars", 1500)
 
 # ── Search provider keys (optional — keyless Semantic Scholar + trafilatura path
 # works without them; keys are only required to use Brave/Tavily/Jina) ─────────

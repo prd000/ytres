@@ -109,3 +109,19 @@ class ReportDraft(BaseModel):
     """
     markdown: str
     source_ids_used: list[str]
+
+
+# ── RAG chat schemas ──────────────────────────────────────────────────────────
+
+class ChatAnswer(BaseModel):
+    """Structured output for the chat_respond handler.
+
+    answer_markdown: answer synthesized from provided source chunks, with inline
+                     markdown citation links [Title](URL).
+    cited_source_ids: subset of the source IDs provided in context (hallucinated
+                      IDs outside this set are dropped before the DB INSERT).
+    confidence: how well the provided corpus answers the question.
+    """
+    answer_markdown: str
+    cited_source_ids: list[str]
+    confidence: Literal["high", "medium", "low"]

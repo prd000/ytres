@@ -16,6 +16,7 @@ from schemas.job_payloads import (
     GeneratePlanPayload,
     GenerateReportPayload,
     ResearchSubtopicPayload,
+    ChatRespondPayload,
     WorkerActivityRow,
     JOB_PAYLOAD_MODELS,
 )
@@ -181,3 +182,30 @@ def test_generate_report_payload_invalid_mode_raises():
 def test_registry_has_generate_report():
     assert "generate_report" in JOB_PAYLOAD_MODELS
     assert JOB_PAYLOAD_MODELS["generate_report"] is GenerateReportPayload
+
+
+def test_chat_respond_payload_valid():
+    p = ChatRespondPayload(project_id="proj-1", question="What are the findings?")
+    assert p.project_id == "proj-1"
+    assert p.question == "What are the findings?"
+    assert p.progress is None
+
+
+def test_chat_respond_payload_with_progress():
+    p = ChatRespondPayload(project_id="proj-1", question="Q", progress="synthesizing")
+    assert p.progress == "synthesizing"
+
+
+def test_chat_respond_payload_missing_project_id_raises():
+    with pytest.raises(ValidationError):
+        ChatRespondPayload(question="Q")  # type: ignore[call-arg]
+
+
+def test_chat_respond_payload_missing_question_raises():
+    with pytest.raises(ValidationError):
+        ChatRespondPayload(project_id="proj-1")  # type: ignore[call-arg]
+
+
+def test_registry_has_chat_respond():
+    assert "chat_respond" in JOB_PAYLOAD_MODELS
+    assert JOB_PAYLOAD_MODELS["chat_respond"] is ChatRespondPayload

@@ -4,6 +4,34 @@ Newest-first. One entry per milestone or significant bug fix.
 
 ---
 
+## Phase 9 — RAG Chat (2026-06-02)
+
+Live chat tab: user asks a question → worker embeds it, hybrid-searches the project corpus, synthesizes a cited answer, and delivers it via Realtime. Low-confidence replies surface a "Research this →" button that spawns a new `research_subtopic` job.
+
+**Backend:**
+- Migration `0013_chat_realtime.sql` — adds `chat_messages` to `supabase_realtime` publication + adds nullable `confidence text` column (set to `'high'|'medium'|'low'` on assistant rows by the worker).
+- `worker/worker/llm/schemas.py` — added `ChatAnswer` Pydantic model (`answer_markdown`, `cited_source_ids`, `confidence`).
+- `shared/schemas/job_payloads.py` — added `ChatRespondPayload` (`project_id`, `question`) + registered `"chat_respond"` in `JOB_PAYLOAD_MODELS`.
+- `config.toml [chat]` — added `chat_match_count = 12` (chunks retrieved) and `chat_chunk_chars = 1500` (per-chunk truncation). No hard-coding.
+- `worker/worker/config.py` — reads `[chat]` section, exports `CHAT_MATCH_COUNT` and `CHAT_CHUNK_CHARS`.
+- `worker/worker/handlers/chat.py` (new) — `chat_respond` handler: embeds question via `Embedder`, calls `match_chunks()` (hybrid RRF search), handles empty-corpus path (low-confidence reply, no LLM call), loads parent source rows scoped to `project_id`, builds synthesis prompt with numbered source blocks + JSON schema hint (DeepSeek `json_mode` requirement), invokes `ChatAnswer` via `invoke_structured`, validates `cited_source_ids ⊆ provided set` (drops hallucinated IDs), builds camelCase `citations` list (`sourceId/sourceTitle/url` — matches TS `Citation` type), INSERTs assistant `chat_messages` row with `confidence` column. Pre- and post-LLM cancellation guards follow `report.py` pattern.
+- `worker/worker/handlers/__init__.py` — registered `"chat_respond": chat_handle`.
+- `worker/tests/test_chat.py` (new) — 6 mocked tests: camelCase citations contract, hallucinated ID drop, empty corpus no-LLM path, project isolation, pre-LLM cancellation, post-LLM cancellation. All pass.
+- `worker/tests/test_contract.py` — 5 new `ChatRespondPayload` round-trip tests. All 38 contract tests pass.
+
+**Frontend:**
+- `web/src/lib/data/types.ts` — added optional `confidence?: "high"|"medium"|"low"` field to `ChatMessage`.
+- `web/src/lib/data/client.ts` — `mapChatMessage` threads `row.confidence` through to the domain type.
+- `web/src/app/(app)/project/[id]/chat/actions.ts` (new) — two `"use server"` actions: `sendChatMessage` (inserts user `chat_messages` row + `chat_respond` job); `spawnResearchFromChat` (inserts subtopic with `wave=99` sentinel + `research_subtopic` job).
+- `web/src/components/features/realtime/ChatRealtime.tsx` (new) — Supabase Realtime subscription on `chat_messages` INSERT scoped to `project_id`; calls `router.refresh()`. Mirrors `ReportRealtime.tsx`.
+- `web/src/components/features/chat/ChatTab.tsx` — "Chat coming soon" `Callout` and disabled composer removed; real composer wired (`useTransition`, controlled input, `sendChatMessage` on submit); "Thinking…" affordance while a `chat_respond` job is in flight (last message is from user OR `isPending`).
+- `web/src/components/features/chat/ChatMessage.tsx` — now a `"use client"` component; `projectId` prop added; low-confidence assistant messages render a "Research this →" button that calls `spawnResearchFromChat`.
+- `web/src/app/(app)/project/[id]/chat/page.tsx` — mounts `<ChatRealtime>` alongside `<ChatTab>` (mirrors `report/page.tsx`).
+
+**Coordinator barrier safety (verified):** `enqueue_ready_coordinator_reviews()` (migration 0011) guards on `p.status = 'researching'` — complete projects are immune. Chat-spawned subtopics also use `wave=99` (outside the two-wave cap) as belt-and-suspenders.
+
+---
+
 ## Bug #3: LangSmith tracing 403 — configurable endpoint + active auth probe (2026-06-02)
 
 **Root cause (confirmed from Render logs):** every trace upload returned `403 Forbidden` from `api.smith.langchain.com/runs/multipart`. Tracing was active and the key was loaded, but the key was revoked/rotated or belongs to a different workspace. The startup check only tested `bool(key)` and logged "ACTIVE" even when the key was rejected; the langsmith tracer downgraded the 403 to a buried per-job `WARNING`.

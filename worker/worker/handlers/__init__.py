@@ -7,6 +7,7 @@ from worker.handlers.planner import handle as planner_handle
 from worker.handlers.research import handle as research_handle
 from worker.handlers.coordinator import handle as coordinator_handle
 from worker.handlers.report import handle as report_handle
+from worker.handlers.chat import handle as chat_handle
 
 HANDLERS: dict[str, object] = {
     "echo": echo_handle,
@@ -14,4 +15,5 @@ HANDLERS: dict[str, object] = {
     "research_subtopic": research_handle,
     "coordinator_review": coordinator_handle,
     "generate_report": report_handle,
+    "chat_respond": chat_handle,
 }

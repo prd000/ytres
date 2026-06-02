@@ -49,6 +49,13 @@ class GenerateReportPayload(BaseModel):
     progress: str | None = None
 
 
+class ChatRespondPayload(BaseModel):
+    """Payload for the 'chat_respond' job type (Phase 9 RAG chat)."""
+    project_id: str
+    question: str
+    progress: str | None = None
+
+
 # Registry mapping job type names to their payload model.
 JOB_PAYLOAD_MODELS: dict[str, type[BaseModel]] = {
     "echo": EchoPayload,
@@ -56,6 +63,7 @@ JOB_PAYLOAD_MODELS: dict[str, type[BaseModel]] = {
     "research_subtopic": ResearchSubtopicPayload,
     "coordinator_review": CoordinatorReviewPayload,
     "generate_report": GenerateReportPayload,
+    "chat_respond": ChatRespondPayload,
 }
 
 

@@ -80,6 +80,7 @@ function mapChatMessage(row: any): ChatMessage {
     role: row.role,
     content: row.content,
     citations: row.citations ?? [],
+    confidence: row.confidence ?? undefined,
     createdAt: new Date(row.created_at),
   };
 }

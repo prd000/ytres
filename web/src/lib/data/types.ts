@@ -73,6 +73,7 @@ export interface ChatMessage {
   role: ChatRole;
   content: string;
   citations: Citation[];
+  confidence?: "high" | "medium" | "low";
   createdAt: Date;
 }
 

@@ -4,6 +4,19 @@ This file tracks architectural decisions and any deviations from the original PR
 
 ---
 
+## 2026-06-02 — Phase 9 architectural decisions
+
+**Decision 1 — RAG chat runs as a job (async + Realtime), no streaming endpoint.**
+Confirmed from decisions.md "Eliminate FastAPI": `sendChatMessage` inserts a user `chat_messages` row + `chat_respond` job; the worker synthesizes the answer and inserts the assistant row; Realtime delivers it to the open tab. Interactive latency (typically a few seconds) is acceptable for this use case. A streaming endpoint remains deferred.
+
+**Decision 2 — Coordinator barrier is safe for chat-spawned subtopics.**
+`enqueue_ready_coordinator_reviews()` (migration 0011) guards on `p.status = 'researching'`; projects reach `complete` status before the user can chat. Chat-spawned subtopics also use `wave = 99` (outside the two-wave cap) as belt-and-suspenders — two independent guards prevent any spurious coordinator re-trigger.
+
+**Decision 3 — Citations use camelCase keys in the JSONB column.**
+The worker inserts `citations` as `[{"sourceId": …, "sourceTitle": …, "url": …}]` (camelCase) rather than snake_case, because `mapChatMessage` in `client.ts` passes `row.citations` verbatim into the `Citation` TS type. No remapping layer needed; the DB column shape matches the domain type exactly. This is a deliberate deviation from the snake_case convention used in other JSONB columns.
+
+---
+
 ## 2026-06-01 — Phase 10 architectural decisions
 
 **Decision 1 — Reports pulled ahead of Phase 9 (RAG Chatbot).**

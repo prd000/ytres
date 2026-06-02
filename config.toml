@@ -40,6 +40,11 @@ extraction_min_words  = 50        # raw_content/extraction below this → fall t
 report_source_cap   = 25     # server-side cap on number of sources (curated + auto)
 report_source_chars = 4000   # per-source full_text truncation budget (chars)
 
+# ── RAG chat ───────────────────────────────────────────────────────────────────
+[chat]
+chat_match_count = 12    # chunks retrieved per question via hybrid search
+chat_chunk_chars = 1500  # per-chunk truncation budget in the synthesis prompt
+
 # ── LLM ────────────────────────────────────────────────────────────────────────
 # Safe to commit — no secrets. Set API keys in .env / Render env vars.
 [llm]

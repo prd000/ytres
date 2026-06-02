@@ -1,12 +1,26 @@
+"use client";
+
+import { useTransition } from "react";
 import { TextLink } from "@/components/ui/TextLink";
+import { spawnResearchFromChat } from "@/app/(app)/project/[id]/chat/actions";
 import type { ChatMessage as ChatMessageType } from "@/lib/data/types";
 
 interface ChatMessageProps {
   message: ChatMessageType;
+  projectId: string;
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, projectId }: ChatMessageProps) {
   const isUser = message.role === "user";
+  const isLowConfidence = !isUser && message.confidence === "low";
+  const [isPending, startTransition] = useTransition();
+
+  function handleSpawn() {
+    const topic = message.content.slice(0, 200);
+    startTransition(async () => {
+      await spawnResearchFromChat(projectId, topic);
+    });
+  }
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -32,6 +46,18 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 {c.sourceTitle}
               </TextLink>
             ))}
+          </div>
+        )}
+        {isLowConfidence && (
+          <div className="mt-3 pt-3 border-t border-hairline-soft">
+            <button
+              type="button"
+              onClick={handleSpawn}
+              disabled={isPending}
+              className="text-body-sm text-primary hover:underline disabled:text-muted disabled:cursor-not-allowed"
+            >
+              {isPending ? "Queuing research…" : "Research this →"}
+            </button>
           </div>
         )}
       </div>

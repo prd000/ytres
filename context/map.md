@@ -17,7 +17,7 @@ A map of the project codebase — one line per file with its purpose. Update whe
 
 ## `agent/` — Active planning artifacts
 
-_(no active plans — all phases through 10 complete)_
+_(no active plans — all phases through 9 and 10 complete)_
 
 ## `agent-complete/` — Completed planning artifacts
 
@@ -30,6 +30,7 @@ _(no active plans — all phases through 10 complete)_
 | `phase-6-plan.md` | Phase 6 implementation plan — worker research pipeline, LangSmith fix, live Research tab (complete) |
 | `phase-8-plan.md` | Phase 8 implementation plan — coordinator review, gap-fill, complete_research RPC, barrier sweep (complete) |
 | `phase-10-plan.md` | Phase 10 implementation plan — reports: curated + auto-draft modes, generate_report handler, Realtime delivery, ReportTab wired live (complete) |
+| `phase-9-plan.md` | Phase 9 implementation plan — RAG chat: chat_respond handler, hybrid search, cited answers, spawn-research affordance, ChatRealtime, live composer (complete) |
 
 ---
 
@@ -50,6 +51,7 @@ _(no active plans — all phases through 10 complete)_
 | `migrations/0010_fix_projects_select_returning.sql` | Bug #1 fix — `projects_select` checks `owner_id = auth.uid()` directly (plus `can_access_project(id)` for members) so `INSERT … RETURNING` (create-project) passes the SELECT policy |
 | `migrations/0011_coordinator_review.sql` | Phase 8 — `subtopics.wave` column; `enqueue_ready_coordinator_reviews()` barrier RPC (advisory lock + NOT EXISTS idempotency); `jobs_review_wave_uniq` partial unique index; `complete_research()` status-transition RPC |
 | `migrations/0012_report_realtime.sql` | Phase 10 — `alter publication supabase_realtime add table reports` so INSERT events reach the open browser tab |
+| `migrations/0013_chat_realtime.sql` | Phase 9 — `alter publication supabase_realtime add table chat_messages` + adds nullable `confidence text` column on `chat_messages` |
 
 ---
 
@@ -72,6 +74,7 @@ _(no active plans — all phases through 10 complete)_
 | `handlers/research.py` | Phase 6 research handler (job type `research_subtopic`): full pipeline — query gen → search → pass-1 filter → extraction → pass-2 eval → store with embeddings. Supports checkpointing, context-window handoff, source cap (12), auto-retry, why-nothing report, cancellation. |
 | `handlers/coordinator.py` | Phase 8 coordinator handler (job type `coordinator_review`): loads coverage data, invokes LLM for CoverageReview, either spawns gap-fill subtopics+jobs (wave 1 w/gaps) or calls complete_research() |
 | `handlers/report.py` | Phase 10 report handler (job type `generate_report`): curated or auto-draft source selection (server-side capped at 25), full-text truncated synthesis prompt, `ReportDraft` LLM output, hallucinated-ID validation, inserts `reports` row |
+| `handlers/chat.py` | Phase 9 chat handler (job type `chat_respond`): embeds question, hybrid match_chunks search, empty-corpus path, synthesis prompt with camelCase citations, `ChatAnswer` LLM output, hallucinated-ID drop, inserts assistant `chat_messages` row with `confidence` |
 
 ### `worker/worker/llm/` — Phase 5 LLM layer
 
@@ -80,7 +83,7 @@ _(no active plans — all phases through 10 complete)_
 | `__init__.py` | Package marker |
 | `config.py` | Frozen `LLMConfig` dataclass + `from_env()` reading `config.toml [llm]` + env (no DB dep) |
 | `factory.py` | `build_chat_model(cfg, role)` — returns `ChatOpenAI` pointed at DeepSeek base_url; provider swap = config edit |
-| `schemas.py` | Structured-output Pydantic models: `SourceTier`, `PlannedSubtopic`, `ResearchPlan` (3–8 subtopics guardrail), `CoverageReview` (Phase 8 coordinator output), `AutoDraftSelection` + `ReportDraft` (Phase 10 report synthesis) |
+| `schemas.py` | Structured-output Pydantic models: `SourceTier`, `PlannedSubtopic`, `ResearchPlan` (3–8 subtopics guardrail), `CoverageReview` (Phase 8 coordinator output), `AutoDraftSelection` + `ReportDraft` (Phase 10 report synthesis), `ChatAnswer` (Phase 9 RAG chat) |
 
 ### `worker/worker/storage/` — Phase 4 storage & embeddings
 
@@ -123,6 +126,7 @@ _(no active plans — all phases through 10 complete)_
 | `test_queue.py` | Integration tests: SKIP LOCKED correctness, claim/heartbeat/reclaim/cancel/idempotent-resume scenarios against real Postgres |
 | `test_contract.py` | Pydantic contract tests for EchoPayload, WorkerActivityRow, GeneratePlanPayload, ResearchSubtopicPayload, CoordinatorReviewPayload, GenerateReportPayload schemas |
 | `test_report.py` | Mocked LLM + DB: curated cap, auto-draft cap, hallucinated-ID drop, source_refs correctness, project isolation, pre/post-LLM cancellation |
+| `test_chat.py` | Mocked LLM + Embedder + match_chunks + DB: camelCase citation keys contract, hallucinated-ID drop, empty-corpus no-LLM path, project isolation, pre/post-LLM cancellation |
 | `test_search_models.py` | Phase 3 contract/validation tests for search models |
 | `test_retry.py` | Retry policy: 500×2→200, 429 retry, 401 fast-fail, all-503 → ProviderUnavailable (respx mocked) |
 | `test_web_providers.py` | Brave/Tavily parsing, factory, missing-key errors (respx mocked) |
@@ -150,7 +154,7 @@ _(no active plans — all phases through 10 complete)_
 | File | Purpose |
 |---|---|
 | `schemas/__init__.py` | Package marker |
-| `schemas/job_payloads.py` | Pydantic models: EchoPayload, GeneratePlanPayload, ResearchSubtopicPayload, CoordinatorReviewPayload, GenerateReportPayload, WorkerActivityRow, JOB_PAYLOAD_MODELS registry |
+| `schemas/job_payloads.py` | Pydantic models: EchoPayload, GeneratePlanPayload, ResearchSubtopicPayload, CoordinatorReviewPayload, GenerateReportPayload, ChatRespondPayload, WorkerActivityRow, JOB_PAYLOAD_MODELS registry |
 
 ---
 
@@ -194,7 +198,8 @@ _(no active plans — all phases through 10 complete)_
 | `(app)/project/[id]/plan/page.tsx` | Plan tab — fetches project + subtopics |
 | `(app)/project/[id]/research/page.tsx` | Research tab — fetches project + subtopics + worker activity |
 | `(app)/project/[id]/sources/page.tsx` | Sources tab — fetches project + subtopics + sources |
-| `(app)/project/[id]/chat/page.tsx` | Chat tab — fetches project + chat messages |
+| `(app)/project/[id]/chat/page.tsx` | Chat tab — fetches project + chat messages; mounts `ChatRealtime` |
+| `(app)/project/[id]/chat/actions.ts` | `"use server"` — `sendChatMessage` (user row + `chat_respond` job); `spawnResearchFromChat` (subtopic wave=99 + `research_subtopic` job) |
 | `(app)/project/[id]/report/page.tsx` | Report tab — fetches project + sources + existing report; mounts `ReportRealtime` |
 | `(app)/project/[id]/report/actions.ts` | `"use server"` — `generateReport(projectId, {mode, sourceIds, instructions})`: auth check, inserts `generate_report` job, revalidatePath |
 | `(app)/project/actions.ts` | `"use server"` Server Actions: `createProject` (insert + enqueue generate_plan), `regeneratePlan` (re-enqueue + set planning), `approvePlan` (set researching), `deleteProject` (cancel_project_jobs RPC + cascade delete + redirect to dashboard) |
@@ -259,12 +264,13 @@ _(no active plans — all phases through 10 complete)_
 | `plan/PlanTab.tsx` | `"use client"` — source tier display, subtopic list; real Approve/Regenerate Server Actions via useActionState; loading dots when planning with no subtopics |
 | `realtime/ProjectRealtime.tsx` | `"use client"` — Supabase Realtime subscription for subtopics+projects+worker_activity+sources; calls router.refresh() on changes; mounted in project layout |
 | `realtime/ReportRealtime.tsx` | `"use client"` — Supabase Realtime subscription for `reports` INSERT events; calls router.refresh(); mounted in the report page |
+| `realtime/ChatRealtime.tsx` | `"use client"` — Supabase Realtime subscription for `chat_messages` INSERT events; calls router.refresh(); mounted in the chat page |
 | `project/NewProjectForm.tsx` | `"use client"` — create-project form: research question, tier checkboxes, recency months, `useActionState(createProject)` |
 | `research/ResearchTab.tsx` | Subtopic progress cards with animated running dots, latest activity, sources-stored count |
 | `sources/SourcesTab.tsx` | Sources grouped by subtopic |
 | `sources/SourceCard.tsx` | Source card — title (external TextLink), key takeaway, 4 ScorePills, tier Badge |
-| `chat/ChatTab.tsx` | `"use client"` — scrollable message thread; composer disabled (Phase 9 RAG pending) |
-| `chat/ChatMessage.tsx` | Chat bubble (user=coral, assistant=card) with citation chips |
+| `chat/ChatTab.tsx` | `"use client"` — scrollable message thread; live composer calls `sendChatMessage`; "Thinking…" affordance while `chat_respond` job is in flight |
+| `chat/ChatMessage.tsx` | `"use client"` — chat bubble (user=coral, assistant=card) with citation chips; "Research this →" button on low-confidence assistant messages |
 | `report/ReportTab.tsx` | `"use client"` — source selector, Generate report (curated), Auto-draft, optional instructions textarea, "Generating…" pending state, .md download + preview |
 | `report/SourceSelector.tsx` | Checkbox list with 25-source cap enforcement |
 | `report/ReportPreview.tsx` | `"use client"` — react-markdown with design-token styled components |
