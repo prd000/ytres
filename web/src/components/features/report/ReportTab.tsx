@@ -4,6 +4,7 @@ import { useState } from "react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { ReportPreview } from "@/components/features/report/ReportPreview";
 import { SourceSelector } from "@/components/features/report/SourceSelector";
+import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Callout";
 import type { Project, Source, Report } from "@/lib/data/types";
 
@@ -33,6 +34,19 @@ export function ReportTab({ project: _project, sources, existingReport }: Report
     });
   }
 
+  // "Select all" caps at SOURCE_CAP — when there are more sources than the cap,
+  // it selects the first SOURCE_CAP. "All selected" means every selectable slot
+  // is filled (either all sources or the cap, whichever is smaller).
+  const selectableCount = Math.min(sources.length, SOURCE_CAP);
+  const allSelected = selectableCount > 0 && selectedIds.size >= selectableCount;
+
+  function toggleSelectAll() {
+    setSelectedIds((prev) => {
+      if (prev.size >= selectableCount) return new Set();
+      return new Set(sources.slice(0, SOURCE_CAP).map((s) => s.id));
+    });
+  }
+
   function handleDownload() {
     if (!report) return;
     const blob = new Blob([report.markdown], { type: "text/markdown" });
@@ -51,7 +65,19 @@ export function ReportTab({ project: _project, sources, existingReport }: Report
           {/* Left: source selection */}
           <aside>
             <div className="lg:sticky lg:top-24">
-              <h2 className="text-title-md text-ink mb-1">Select sources</h2>
+              <div className="flex items-baseline justify-between gap-3 mb-1">
+                <h2 className="text-title-md text-ink">Select sources</h2>
+                {sources.length > 0 && (
+                  <Button
+                    variant="text"
+                    size="sm"
+                    onClick={toggleSelectAll}
+                    className="px-0 h-auto shrink-0"
+                  >
+                    {allSelected ? "Deselect all" : "Select all"}
+                  </Button>
+                )}
+              </div>
               <p className="text-body-sm text-muted mb-4">
                 {selectedIds.size}/{SOURCE_CAP} selected
               </p>

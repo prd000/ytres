@@ -4,6 +4,9 @@ Newest-first. One entry per milestone or significant bug fix.
 
 ---
 
+## Feature: "Select all" sources for report (2026-06-01)
+Bug-corrections #2. Added a `Select all` / `Deselect all` toggle (Button `text` variant, `sm`) to the Report tab source selector header (`report/ReportTab.tsx`). "Select all" caps at `SOURCE_CAP` (25) — selecting the first 25 when more sources exist; the button flips to "Deselect all" once every selectable slot is filled. Reuses the existing `selectedIds` Set + cap logic; `SourceSelector.tsx` unchanged.
+
 ## Phase 8 — Coordinator review + gap-fill (2026-06-01)
 Closes the research loop. New `coordinator_review` job type: after all `research_subtopic` jobs for a project finish, an in-process coordinator sweep (`_coordinator_sweep` in `loop.py`, every 10 s) calls the `enqueue_ready_coordinator_reviews()` SECURITY DEFINER RPC (migration `0011`). The RPC uses a transaction-level advisory lock + `NOT EXISTS` idempotency guards to enqueue exactly one review per wave (two-wave cap). The coordinator handler (`handlers/coordinator.py`) loads per-subtopic coverage (key takeaways + why-nothing reports), invokes the DeepSeek coordinator LLM against `CoverageReview` schema, then either spawns gap-fill subtopics + jobs (wave 1 only) or calls `complete_research()` (new SECURITY DEFINER RPC — sanctioned exception to Decision 4). New `subtopics.wave` column (0 = initial plan, 1 = gap-fill); Research tab renders a "Gap-fill" outline Badge for wave > 0 subtopics. `CoordinatorReviewPayload` + `CoverageReview` schemas added. 20 contract tests pass; coordinator + barrier integration tests written (live run pending — no local Supabase).
 

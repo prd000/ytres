@@ -193,6 +193,31 @@ def sid():
     return str(uuid.uuid4())
 
 
+def test_search_query_set_coerces_dict_queries():
+    """The model sometimes returns {'query': ..., 'source_type': ...} objects
+    instead of bare strings — the validator must normalise them to strings."""
+    qs = SearchQuerySet.model_validate({
+        "queries": [
+            {"query": "Wagner Group operations", "source_type": "news"},
+            {"query": "legal status private military", "source_type": "academic"},
+            {"query": "Wagner Group mercenaries", "source_type": "industry"},
+            "Russian state involvement",  # mixed: plain string still works
+        ]
+    })
+    assert qs.queries == [
+        "Wagner Group operations",
+        "legal status private military",
+        "Wagner Group mercenaries",
+        "Russian state involvement",
+    ]
+
+
+def test_search_query_set_plain_strings_unchanged():
+    """Bare-string responses (the happy path) are unaffected by the validator."""
+    qs = SearchQuerySet.model_validate({"queries": ["a", "b", "c"]})
+    assert qs.queries == ["a", "b", "c"]
+
+
 async def test_store_rule_passes_good_source(pid, sid, monkeypatch):
     """Source with avg>=3 and no-1 scores gets stored."""
     pool, conn = _make_fake_pool(pid, sid)
