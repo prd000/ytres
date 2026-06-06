@@ -4,6 +4,16 @@ Newest-first. One entry per milestone or significant bug fix.
 
 ---
 
+## Bug #2: Chat messages now appear in real-time without page refresh (2026-06-06)
+
+**Root cause:** `ChatTab` rendered `initialMessages` directly from server-component props. `ChatRealtime.tsx` called `router.refresh()` on each Realtime INSERT, which required a full server round-trip before React would re-render with new messages — slow, unreliable, and broken in practice.
+
+**Fix:**
+- `ChatTab.tsx` now owns its message list via `useState` seeded from `initialMessages`. The Supabase Realtime subscription (previously in `ChatRealtime.tsx`) is moved directly into this component and appends incoming messages to local state on each INSERT — no server round-trip needed.
+- Optimistic update: the user's own message is appended to local state immediately on submit (temporary `optimistic-*` ID). When the real DB row arrives via Realtime, the placeholder is replaced by matching on `optimisticIdRef`.
+- `waitingForReply` / "Thinking…" indicator now tracks local `messages` state, so it stays visible from the moment the user submits until the assistant message arrives via Realtime.
+- `ChatRealtime.tsx` deleted (dead code). `ChatPage` simplified — no longer mounts a separate Realtime component.
+
 ## Tuning: lower worker concurrency 5 → 3 (2026-06-06)
 
 A research project crashed on Render (free plan, limited RAM) from too many jobs running at once. Lowered `[worker] concurrency` in `config.toml` from `5` to `3` to reduce peak concurrent memory. The value flows through `worker/worker/config.py` (`WORKER_CONCURRENCY`) into the `asyncio.Semaphore` in `worker/worker/loop.py`, which hard-caps simultaneously-running handlers. Config-only change; no code edits. Takes effect on next worker restart/deploy.
