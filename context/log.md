@@ -4,6 +4,12 @@ Newest-first. One entry per milestone or significant bug fix.
 
 ---
 
+## Tuning: lower worker concurrency 5 → 3 (2026-06-06)
+
+A research project crashed on Render (free plan, limited RAM) from too many jobs running at once. Lowered `[worker] concurrency` in `config.toml` from `5` to `3` to reduce peak concurrent memory. The value flows through `worker/worker/config.py` (`WORKER_CONCURRENCY`) into the `asyncio.Semaphore` in `worker/worker/loop.py`, which hard-caps simultaneously-running handlers. Config-only change; no code edits. Takes effect on next worker restart/deploy.
+
+---
+
 ## Phase 9 — RAG Chat (2026-06-02)
 
 Live chat tab: user asks a question → worker embeds it, hybrid-searches the project corpus, synthesizes a cited answer, and delivers it via Realtime. Low-confidence replies surface a "Research this →" button that spawns a new `research_subtopic` job.

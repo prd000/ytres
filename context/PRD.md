@@ -347,5 +347,5 @@ Phase 0 exists so there is something navigable to QA from the very first day, an
 - The project is intended as a portfolio piece for AI engineer positions — architecture decisions should favor clarity, observability, and demonstrating understanding of multi-agent tradeoffs. The database-backed queue is a deliberate "right-sized" choice over Celery/Redis and should be presented as such.
 - DeepSeek V4 is the target model family for v1 (`deepseek-v4-pro` for reasoning, `deepseek-v4-flash` for high-volume classification), but all LLM calls go through LangChain with the OpenAI-compatible interface to remain model-agnostic.
 - LangSmith must be enabled on every LLM call for full observability of the agent pipeline.
-- Context window management is critical: the 100K token ceiling and worker handoff (continuation-job) mechanism should be built and tested early, as it's foundational to cost control and output quality.
+- Context window management is critical: the token ceiling and worker handoff (continuation-job) mechanism should be built and tested early, as it's foundational to cost control and output quality.
 - The browser must never run or hold agent work. It only triggers (via API) and projects (via Realtime). This invariant is what makes navigation safe.

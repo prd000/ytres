@@ -1,7 +1,7 @@
 # ── Worker tuning ──────────────────────────────────────────────────────────────
 # Adjust these per deployment; no secrets here — safe to commit.
 [worker]
-concurrency           = 5
+concurrency           = 3     # lowered from 5 for Render free-tier RAM limits
 poll_interval         = 2.0   # seconds between job-queue polls
 heartbeat_interval    = 10.0  # must be well under stale_timeout_seconds / 2
 watchdog_interval     = 60.0  # how often to scan for stale jobs
