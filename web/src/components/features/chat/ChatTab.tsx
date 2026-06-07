@@ -20,6 +20,9 @@ export function ChatTab({ projectId, initialMessages }: ChatTabProps) {
   const [messages, setMessages] = useState<ChatMessageType[]>(initialMessages);
   // Tracks the temporary ID of an optimistic user message so the real one can replace it.
   const optimisticIdRef = useRef<string | null>(null);
+  // Tracks whether research was just spawned (before worker picks it up) and which subtopics are actively running.
+  const [spawnedPending, setSpawnedPending] = useState(false);
+  const [activeResearchIds, setActiveResearchIds] = useState<string[]>([]);
 
   // Subscribe to Realtime INSERT events and append directly to local state —
   // no router.refresh() round-trip needed.
@@ -66,6 +69,42 @@ export function ChatTab({ projectId, initialMessages }: ChatTabProps) {
     };
   }, [projectId]);
 
+  // Subscribe to worker_activity to track research-in-progress state.
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`worker_activity_chat:${projectId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "worker_activity",
+          filter: `project_id=eq.${projectId}`,
+        },
+        (payload) => {
+          // Any activity event means the worker has picked up the job.
+          setSpawnedPending(false);
+          const row = payload.new as Record<string, unknown> | null;
+          if (!row) return;
+          const subtopicId = row.subtopic_id as string;
+          const status = row.status as string;
+          if (status === "running") {
+            setActiveResearchIds((prev) =>
+              prev.includes(subtopicId) ? prev : [...prev, subtopicId]
+            );
+          } else {
+            setActiveResearchIds((prev) => prev.filter((id) => id !== subtopicId));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [projectId]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -73,6 +112,12 @@ export function ChatTab({ projectId, initialMessages }: ChatTabProps) {
   // True when the last message in local state is from the user (assistant reply pending).
   const waitingForReply =
     messages.length > 0 && messages[messages.length - 1].role === "user";
+
+  const researchInProgress = spawnedPending || activeResearchIds.length > 0;
+
+  function handleResearchSpawned() {
+    setSpawnedPending(true);
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -126,8 +171,17 @@ export function ChatTab({ projectId, initialMessages }: ChatTabProps) {
                   key={msg.id}
                   message={msg}
                   projectId={projectId}
+                  onResearchSpawned={handleResearchSpawned}
                 />
               ))}
+              {researchInProgress && (
+                <div className="flex justify-center">
+                  <div className="flex items-center gap-2 text-body-sm text-muted px-4 py-2 bg-surface-soft border border-hairline-soft rounded-full">
+                    <span className="w-1.5 h-1.5 rounded-full bg-accent-teal animate-pulse flex-shrink-0" />
+                    Research in progress…
+                  </div>
+                </div>
+              )}
               {(isPending || waitingForReply) && (
                 <div className="flex justify-start">
                   <div className="bg-surface-card text-muted border border-hairline-soft rounded-lg px-4 py-3">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { TextLink } from "@/components/ui/TextLink";
 import { spawnResearchFromChat } from "@/app/(app)/project/[id]/chat/actions";
 import type { ChatMessage as ChatMessageType } from "@/lib/data/types";
@@ -8,17 +8,23 @@ import type { ChatMessage as ChatMessageType } from "@/lib/data/types";
 interface ChatMessageProps {
   message: ChatMessageType;
   projectId: string;
+  onResearchSpawned?: () => void;
 }
 
-export function ChatMessage({ message, projectId }: ChatMessageProps) {
+export function ChatMessage({ message, projectId, onResearchSpawned }: ChatMessageProps) {
   const isUser = message.role === "user";
   const isLowConfidence = !isUser && message.confidence === "low";
   const [isPending, startTransition] = useTransition();
+  const [spawned, setSpawned] = useState(false);
 
   function handleSpawn() {
     const topic = message.content.slice(0, 200);
     startTransition(async () => {
-      await spawnResearchFromChat(projectId, topic);
+      const result = await spawnResearchFromChat(projectId, topic);
+      if (!result || "subtopicId" in result) {
+        setSpawned(true);
+        onResearchSpawned?.();
+      }
     });
   }
 
@@ -50,14 +56,18 @@ export function ChatMessage({ message, projectId }: ChatMessageProps) {
         )}
         {isLowConfidence && (
           <div className="mt-3 pt-3 border-t border-hairline-soft">
-            <button
-              type="button"
-              onClick={handleSpawn}
-              disabled={isPending}
-              className="text-body-sm text-primary hover:underline disabled:text-muted disabled:cursor-not-allowed"
-            >
-              {isPending ? "Queuing research…" : "Research this →"}
-            </button>
+            {spawned ? (
+              <span className="text-body-sm text-muted">Research queued ✓</span>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSpawn}
+                disabled={isPending}
+                className="text-body-sm text-primary hover:underline disabled:text-muted disabled:cursor-not-allowed"
+              >
+                {isPending ? "Queuing research…" : "Research this →"}
+              </button>
+            )}
           </div>
         )}
       </div>

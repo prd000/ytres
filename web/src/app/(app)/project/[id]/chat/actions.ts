@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
 export type SendChatMessageState = { error: string } | undefined;
-export type SpawnResearchState = { error: string } | undefined;
+export type SpawnResearchState = { error: string } | { subtopicId: string } | undefined;
 
 export async function sendChatMessage(
   projectId: string,
@@ -76,4 +76,5 @@ export async function spawnResearchFromChat(
   if (jobError) return { error: jobError.message };
 
   revalidatePath(`/project/${projectId}/research`);
+  return { subtopicId: subtopic.id };
 }

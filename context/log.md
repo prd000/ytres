@@ -4,6 +4,15 @@ Newest-first. One entry per milestone or significant bug fix.
 
 ---
 
+## Bug #1: Research-in-progress indicator on chat spawn (2026-06-06)
+
+**Root cause:** After clicking "Research this →" in the RAG chat screen, `spawnResearchFromChat` only toggled `isPending` during the ~instant server action round-trip. Once the action resolved, there was no persistent indicator that the research job was now running in the background.
+
+**Fix — three-file change:**
+- `actions.ts`: `spawnResearchFromChat` now returns `{ subtopicId }` on success (instead of `undefined`) so the client can confirm the action succeeded vs. errored.
+- `ChatMessage.tsx`: Tracks a `spawned` boolean. After a successful spawn the "Research this →" button is replaced with a static "Research queued ✓" label (no longer clickable), and the new `onResearchSpawned` callback fires to notify the parent.
+- `ChatTab.tsx`: Adds a `worker_activity` Supabase Realtime subscription (channel `worker_activity_chat:{projectId}`). Tracks two state values — `spawnedPending` (set true immediately when the callback fires; cleared on first worker_activity event) and `activeResearchIds` (subtopics whose status is `"running"`). While either is truthy, a teal pulsing pill "Research in progress…" is shown in the message list above the "Thinking…" indicator. The pill disappears automatically when the worker sets the subtopic status to `"complete"` or `"failed"`.
+
 ## Bug #2: Chat messages now appear in real-time without page refresh (2026-06-06)
 
 **Root cause:** `ChatTab` rendered `initialMessages` directly from server-component props. `ChatRealtime.tsx` called `router.refresh()` on each Realtime INSERT, which required a full server round-trip before React would re-render with new messages — slow, unreliable, and broken in practice.
