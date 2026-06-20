@@ -4,6 +4,23 @@ This file tracks architectural decisions and any deviations from the original PR
 
 ---
 
+## 2026-06-19 — Major Feature #4: Source selection moved to Sources screen
+
+**Decision:** Source selection (checkboxes, instructions, Generate report, Auto-draft) has moved from the Report screen to the **Sources screen** (`SourcesTab.tsx`). The Report screen is now **view-only** — it shows the generated report, a "Generating report…" state, or "No report yet." depending on DB state.
+
+**Diverges from PRD US19**, which placed selection on the Report screen.
+
+**Details:**
+- `SourcesTab` is now a `"use client"` component. It owns `selectedIds` state, the 25-source cap, Select all / Deselect all, the instructions textarea, and the Generate/Auto-draft buttons. On success it calls `router.push` to the Report screen.
+- `SourceCard` now accepts optional `selected`, `onToggle`, `disabled` props; renders a checkbox (top-left) and `border-primary bg-primary/5` styling when selectable. Non-breaking when `onToggle` is absent.
+- `ReportTab` props narrowed to `{ existingReport, isGenerating }`. All selection state removed.
+- `report/page.tsx` no longer fetches `getSources`; fetches `getActiveReportJob` (new helper in `client.ts`) to provide the `isGenerating` boolean server-side. `ReportRealtime` still refreshes the page on report INSERT, which re-runs `getActiveReportJob` and flips the indicator.
+- `SourceSelector.tsx` deleted (replaced by selectable `SourceCard`).
+
+**Note on failed jobs:** a `failed` job won't auto-clear the "Generating…" indicator without a manual refresh — this is acceptable and noted in `deferredwork.md`.
+
+---
+
 ## 2026-06-02 — Phase 9 architectural decisions
 
 **Decision 1 — RAG chat runs as a job (async + Realtime), no streaming endpoint.**

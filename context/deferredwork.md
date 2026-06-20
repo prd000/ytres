@@ -2,6 +2,12 @@
 
 Things to be implemented later, deferred in favor of a working prototype, or that require the user to supply something (API keys, accounts, secrets). Alert the user whenever an item is added here.
 
+## Major Feature #4 — Failed report job leaves "Generating…" indicator stuck (added 2026-06-19)
+
+After a `generate_report` job fails, `getActiveReportJob` returns `false` only after a manual page refresh (the job row moves to `failed` status but there is no Realtime event to clear the indicator). The `ReportRealtime` component only subscribes to `reports` INSERT events, not `jobs` status changes. Acceptable for now; a fix would subscribe to `jobs` UPDATE events and call `router.refresh()` on `status = 'failed'`.
+
+---
+
 ## Bug #3 fix — user action required: replace LangSmith API key on Render (added 2026-06-02)
 
 The worker logs confirmed `403 Forbidden` on every trace upload — the API key is revoked, rotated, or belongs to a different workspace than the `ytres` project you're watching.

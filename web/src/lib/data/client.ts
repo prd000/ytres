@@ -177,3 +177,17 @@ export async function getReport(projectId: string): Promise<Report | null> {
   if (error) throw error;
   return data ? mapReport(data) : null;
 }
+
+export async function getActiveReportJob(projectId: string): Promise<boolean> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("jobs")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("type", "generate_report")
+    .in("status", ["queued", "running"])
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data !== null;
+}

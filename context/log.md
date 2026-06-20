@@ -4,6 +4,22 @@ Newest-first. One entry per milestone or significant bug fix.
 
 ---
 
+## Major Feature #4 — Source selection moved to Sources screen (2026-06-19)
+
+Source selection, instructions, and report generation controls have moved from the cramped 320px sidebar on the Report screen to the full-viewport Sources screen.
+
+**Changes:**
+- `web/src/lib/data/client.ts` — added `getActiveReportJob(projectId)`: queries `jobs` for any `queued`/`running` `generate_report` job; returns boolean. Used by the Report page to server-render the "Generating…" state after navigation.
+- `web/src/components/features/sources/SourceCard.tsx` — added optional `selected`, `onToggle`, `disabled` props. When `onToggle` is provided: renders a top-left checkbox (`accent-primary`), applies `border-primary bg-primary/5` selected styling, and `opacity-40` when disabled. Non-breaking when props are absent.
+- `web/src/components/features/sources/SourcesTab.tsx` — converted to `"use client"`. Adds `selectedIds` state (25-source cap), `toggleSource`, `toggleSelectAll`, `useTransition`, and `useRouter`. Header row now shows selected count (`{n}/25 selected`) + Select all / Deselect all text button. Each `SourceCard` receives `selected`/`onToggle`/`disabled`. Inline control panel after the last subtopic section: instructions textarea, Generate report (primary, disabled when nothing selected), Auto-draft (secondary), error line. On success → `router.push` to the Report screen.
+- `web/src/components/features/report/ReportTab.tsx` — stripped all selection state and controls. New props: `{ existingReport, isGenerating }`. Renders: "Generating report…" placeholder, existing report with "Generating a new version…" hint + Download .md button, or "No report yet." pointing user to the Sources tab.
+- `web/src/app/(app)/project/[id]/report/page.tsx` — dropped `getSources` fetch; added `getActiveReportJob`. Passes `existingReport` + `isGenerating` to `ReportTab`.
+- `web/src/components/features/report/SourceSelector.tsx` — deleted (replaced by selectable `SourceCard`).
+
+**Diverges from PRD US19** (source selection on Report screen). Recorded in `decisions.md`.
+
+---
+
 ## Bug #1: Research-in-progress indicator on chat spawn (2026-06-06)
 
 **Root cause:** After clicking "Research this →" in the RAG chat screen, `spawnResearchFromChat` only toggled `isPending` during the ~instant server action round-trip. Once the action resolved, there was no persistent indicator that the research job was now running in the background.

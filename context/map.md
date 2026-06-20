@@ -200,7 +200,7 @@ _(no active plans — all phases through 9 and 10 complete)_
 | `(app)/project/[id]/sources/page.tsx` | Sources tab — fetches project + subtopics + sources |
 | `(app)/project/[id]/chat/page.tsx` | Chat tab — fetches project + chat messages; mounts `ChatRealtime` |
 | `(app)/project/[id]/chat/actions.ts` | `"use server"` — `sendChatMessage` (user row + `chat_respond` job); `spawnResearchFromChat` (subtopic wave=99 + `research_subtopic` job) |
-| `(app)/project/[id]/report/page.tsx` | Report tab — fetches project + sources + existing report; mounts `ReportRealtime` |
+| `(app)/project/[id]/report/page.tsx` | Report tab — fetches project + existing report + `getActiveReportJob`; mounts `ReportRealtime`. View-only. |
 | `(app)/project/[id]/report/actions.ts` | `"use server"` — `generateReport(projectId, {mode, sourceIds, instructions})`: auth check, inserts `generate_report` job, revalidatePath |
 | `(app)/project/actions.ts` | `"use server"` Server Actions: `createProject` (insert + enqueue generate_plan), `regeneratePlan` (re-enqueue + set planning), `approvePlan` (set researching), `deleteProject` (cancel_project_jobs RPC + cascade delete + redirect to dashboard) |
 | `(app)/project/new/page.tsx` | New project page — server component rendering `NewProjectForm` |
@@ -212,7 +212,7 @@ _(no active plans — all phases through 9 and 10 complete)_
 | `utils.ts` | `cn()` (clsx + tailwind-merge), `formatRelativeDate()` |
 | `design/tokens.ts` | TS-side design maps: `STATUS_META` (ProjectStatus → label/toneClass/dotClass), `scoreClass()`, `scoreBarClass()` |
 | `data/types.ts` | Domain types: `ProjectStatus`, `SourceTier`, `SubtopicStatus`, `Project`, `Subtopic`, `Source`, `WorkerActivity`, `ChatMessage`, `Report`. Verbatim-reusable by real Supabase client. |
-| `data/client.ts` | Real Supabase data-access layer — 7 async fns with row→domain mappers; `"server-only"` guard. `fixtures.ts` deleted. |
+| `data/client.ts` | Real Supabase data-access layer — 8 async fns with row→domain mappers; `"server-only"` guard. Includes `getActiveReportJob`. |
 | `data/dal.ts` | `getCurrentUser()` — server-only, React cache()-memoized, reads Supabase auth session |
 | `supabase/client.ts` | `createClient()` — `createBrowserClient` for Client Components |
 | `supabase/server.ts` | `createClient()` — `createServerClient` with async cookies() adapter (`server-only`) |
@@ -267,10 +267,9 @@ _(no active plans — all phases through 9 and 10 complete)_
 | `realtime/ChatRealtime.tsx` | `"use client"` — Supabase Realtime subscription for `chat_messages` INSERT events; calls router.refresh(); mounted in the chat page |
 | `project/NewProjectForm.tsx` | `"use client"` — create-project form: research question, tier checkboxes, recency months, `useActionState(createProject)` |
 | `research/ResearchTab.tsx` | Subtopic progress cards with animated running dots, latest activity, sources-stored count |
-| `sources/SourcesTab.tsx` | Sources grouped by subtopic |
-| `sources/SourceCard.tsx` | Source card — title (external TextLink), key takeaway, 4 ScorePills, tier Badge |
+| `sources/SourcesTab.tsx` | `"use client"` — sources grouped by subtopic with per-card checkboxes (25-source cap), Select all/Deselect all, instructions textarea, Generate report + Auto-draft buttons; navigates to Report screen on success |
+| `sources/SourceCard.tsx` | Source card — title (external TextLink), key takeaway, 4 ScorePills, tier Badge. Accepts optional `selected`/`onToggle`/`disabled` props for selectable mode (checkbox top-left, `border-primary bg-primary/5`). |
 | `chat/ChatTab.tsx` | `"use client"` — scrollable message thread; live composer calls `sendChatMessage`; "Thinking…" affordance while `chat_respond` job is in flight |
 | `chat/ChatMessage.tsx` | `"use client"` — chat bubble (user=coral, assistant=card) with citation chips; "Research this →" button on low-confidence assistant messages |
-| `report/ReportTab.tsx` | `"use client"` — source selector, Generate report (curated), Auto-draft, optional instructions textarea, "Generating…" pending state, .md download + preview |
-| `report/SourceSelector.tsx` | Checkbox list with 25-source cap enforcement |
+| `report/ReportTab.tsx` | `"use client"` — view-only: shows "Generating…" placeholder, existing report with Download .md button, or "No report yet." Props: `existingReport` + `isGenerating`. |
 | `report/ReportPreview.tsx` | `"use client"` — react-markdown with design-token styled components |
